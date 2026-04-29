@@ -16,6 +16,7 @@ node_modules/
 dist/
 .netlify/
 *.local
+*.tsbuildinfo
 
 # IDE / OS
 .vscode/

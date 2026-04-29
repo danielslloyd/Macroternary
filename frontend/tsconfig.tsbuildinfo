@@ -1,1 +1,0 @@
-{"root":["./src/App.tsx","./src/main.tsx","./src/types.ts","./src/data/load.ts","./src/filters/FilterSidebar.tsx","./src/recipe/RecipeExportCard.tsx","./src/recipe/RecipeModal.tsx","./src/recipe/encoder.ts","./src/ternary/Ternary.tsx","./src/ternary/geometry.ts","./src/ternary/isolines.ts"],"version":"5.9.3"}

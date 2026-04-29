@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.uv/
+*.db
+*.db-journal
+.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / Vite
+node_modules/
+dist/
+.netlify/
+*.local
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Local config
+.env
+.env.*
+!.env.example
+
+# Snapshot artifacts (keep checked-in demo files; ignore additional versions)
+backend/public/

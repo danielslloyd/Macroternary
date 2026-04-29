@@ -1,0 +1,14 @@
+{
+  "name": "macro-ternary-functions",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@netlify/blobs": "^10.0.0"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^2.8.0",
+    "@types/node": "^25.6.0",
+    "typescript": "^5.5.4"
+  }
+}

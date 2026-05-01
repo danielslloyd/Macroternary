@@ -39,13 +39,14 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-cd ..
 
 echo Initializing database...
-uv run -m mt init-db
+uv run mt init-db
 
 echo Seeding demo data...
-uv run -m mt seed-demo
+uv run mt seed-demo
+
+cd ..
 
 echo.
 echo Starting server on http://127.0.0.1:8000
@@ -56,6 +57,7 @@ echo.
 
 start http://127.0.0.1:8000
 timeout /t 2 /nobreak >nul
-uv run -m mt serve
+cd backend
+uv run mt serve
 
 pause

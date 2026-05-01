@@ -6,6 +6,7 @@
 //      forwards to OpenAI (requires OPENAI_API_KEY) and returns macros.
 
 import { calorieShares } from "./geometry.js";
+import { loadApiKeys, getModelsByProvider } from "./models.js";
 
 // ─── URL-hash persistence ────────────────────────────────────────────────
 
@@ -83,9 +84,18 @@ const MODAL_TEMPLATE = `
     <div class="border border-gray-200 rounded p-3 space-y-3">
       <h3 class="text-sm font-semibold">AI estimator <span class="text-xs font-normal text-gray-500">(optional)</span></h3>
       <p class="text-xs text-gray-600">
-        Paste a freeform recipe; the local backend forwards to OpenAI. Requires
-        <code class="font-mono">OPENAI_API_KEY</code> set when you ran <code class="font-mono">mt serve</code>.
+        Paste a freeform recipe; the local backend forwards to your configured LLM.
       </p>
+
+      <div data-providers-list class="space-y-2"></div>
+
+      <div class="hidden" data-no-keys-msg>
+        <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+          No API keys configured. Add them to <code class="font-mono text-xs">frontend/data/api-keys.json</code>
+          and reload the page.
+        </p>
+      </div>
+
       <textarea data-llm-text rows="3"
                 placeholder="1 cup oats, 1 tbsp peanut butter, 1 scoop whey, 1 banana"
                 class="w-full px-2 py-1 border border-gray-300 rounded text-sm font-mono"></textarea>
@@ -105,7 +115,7 @@ const MODAL_TEMPLATE = `
   </div>
 </div>`;
 
-export function openRecipeModal({ onAdd }) {
+export async function openRecipeModal({ onAdd }) {
   const root = document.getElementById("modal-root");
   root.innerHTML = MODAL_TEMPLATE;
 
@@ -117,6 +127,30 @@ export function openRecipeModal({ onAdd }) {
     if (e.target === overlay) close();
   });
   card.addEventListener("click", (e) => e.stopPropagation());
+
+  // Load API keys and populate provider list
+  await loadApiKeys();
+  const providers = getModelsByProvider();
+  const providersList = card.querySelector("[data-providers-list]");
+  const noKeysMsg = card.querySelector("[data-no-keys-msg]");
+
+  if (providers.some((p) => p.available)) {
+    providers.forEach((provider) => {
+      const providerEl = document.createElement("div");
+      providerEl.className = `px-2 py-1.5 rounded ${provider.available ? "" : "opacity-50"}`;
+      providerEl.style.backgroundColor = provider.color;
+      providerEl.innerHTML = `
+        <div class="text-xs font-semibold">${provider.label}</div>
+        <div class="text-xs text-gray-700">
+          ${provider.models.map((m) => m.name).join(", ")}
+          ${!provider.available ? "<span class='text-xs text-gray-500'> (no key)</span>" : ""}
+        </div>
+      `;
+      providersList.appendChild(providerEl);
+    });
+  } else {
+    noKeysMsg.classList.remove("hidden");
+  }
 
   const titleEl = card.querySelector("[data-mt-title]");
   const kcalEl = card.querySelector("[data-mt-kcal]");

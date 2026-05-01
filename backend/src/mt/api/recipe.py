@@ -182,26 +182,45 @@ def _load_api_keys() -> dict[str, str]:
 
     # Try to load from api-keys.json first
     api_keys_path = Path(__file__).resolve().parents[4] / "frontend" / "data" / "api-keys.json"
+    print(f"\n=== LOADING API KEYS ===")
+    print(f"Looking for api-keys.json at: {api_keys_path}")
+    print(f"File exists: {api_keys_path.exists()}")
     logger.info(f"Looking for api-keys.json at: {api_keys_path}")
 
     if api_keys_path.exists():
         try:
-            with open(api_keys_path) as f:
-                keys = json.load(f)
+            print(f"Reading file...")
+            with open(api_keys_path, 'r') as f:
+                content = f.read()
+                print(f"Raw file content: {content}")
+                keys = json.loads(content)
+            print(f"Parsed keys: {keys}")
+            print(f"Keys with non-empty values: {[(k, v) for k, v in keys.items() if v]}")
             logger.info(f"Loaded API keys from {api_keys_path}: {list(keys.keys())}")
+            # Filter out empty strings
+            keys = {k: v for k, v in keys.items() if v and v.strip()}
+            print(f"Final filtered keys: {list(keys.keys())}")
         except Exception as e:
-            logger.error(f"Failed to load api-keys.json: {e}")
+            print(f"ERROR loading api-keys.json: {e}")
+            logger.error(f"Failed to load api-keys.json: {e}", exc_info=True)
     else:
+        print(f"api-keys.json not found at {api_keys_path}")
         logger.warning(f"api-keys.json not found at {api_keys_path}")
 
     # Also check environment variables (they override api-keys.json)
+    print(f"Checking environment variables...")
     for provider in ["openai", "anthropic", "google", "grok"]:
         env_var = f"{provider.upper()}_API_KEY"
         env_key = os.getenv(env_var)
         if env_key:
+            print(f"  {env_var}: {env_key[:20]}...")
             keys[provider] = env_key
             logger.info(f"Loaded {provider} key from environment variable {env_var}")
+        else:
+            print(f"  {env_var}: NOT SET")
 
+    print(f"Final API keys available: {list(keys.keys())}")
+    print(f"=== END LOADING API KEYS ===\n")
     logger.info(f"Final API keys available: {list(keys.keys())}")
     return keys
 

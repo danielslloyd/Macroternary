@@ -1,0 +1,25 @@
+/* Anything Tailwind utilities don't cover. */
+
+#ternary-mount svg {
+  width: 100%;
+  height: auto;
+  user-select: none;
+}
+
+.point {
+  cursor: pointer;
+  transition: stroke-width 80ms ease;
+}
+.point:hover,
+.point:focus {
+  stroke-width: 2;
+  outline: none;
+}
+
+.isoline {
+  pointer-events: none;
+}
+
+.recipe-marker {
+  cursor: pointer;
+}

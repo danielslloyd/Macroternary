@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "generated_at": "2026-05-01T15:10:22.982627+00:00",
+  "count": 10,
+  "retailers": [
+    "costco",
+    "trader_joes",
+    "walmart"
+  ],
+  "products_url": "products.v1.json",
+  "families_url": "families.v1.json"
+}

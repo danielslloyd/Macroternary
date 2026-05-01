@@ -11,13 +11,6 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
-# Node / Vite
-node_modules/
-dist/
-.netlify/
-*.local
-*.tsbuildinfo
-
 # IDE / OS
 .vscode/
 .idea/
@@ -27,6 +20,3 @@ dist/
 .env
 .env.*
 !.env.example
-
-# Snapshot artifacts (keep checked-in demo files; ignore additional versions)
-backend/public/

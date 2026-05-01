@@ -1,24 +1,32 @@
-"""FastAPI admin app (§6 photo pipeline).
+"""Local FastAPI server.
 
-Bound to 127.0.0.1; never exposed publicly. Serves the local React admin
-under /admin and provides JSON endpoints for the photo review flow.
+In the local sandbox this single process serves three things:
+  1. the static frontend (index.html + js/* + data/*) at /
+  2. admin JSON endpoints under /admin/api/* (photo review queue, families)
+  3. the recipe LLM endpoint at /api/recipe (calls OpenAI; optional)
 
-This is a minimal scaffold — enough to host a UI, list pending extractions,
-and accept/reject reviewed rows. Re-extraction wiring is stubbed.
+Bound to 127.0.0.1 by default; never exposed publicly.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from pathlib import Path
 from typing import Iterator
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from mt.api import recipe as recipe_mod
 from mt.db.models import ExtractionAttempt, FoodFamily, Product, Source
 from mt.db.session import SessionLocal
 from mt.validators import ProductCandidate, validate_product
+
+# Repo root: backend/src/mt/api/app.py → up four = backend/, up five = repo root.
+REPO_ROOT = Path(__file__).resolve().parents[4]
+FRONTEND_DIR = REPO_ROOT / "frontend"
 
 
 def get_db() -> Iterator[Session]:
@@ -36,15 +44,21 @@ class ApproveRequest(BaseModel):
     attempt_id: str | None = None
 
 
+class RecipeRequest(BaseModel):
+    text: str
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Macro Ternary admin", docs_url="/admin/docs")
+    app = FastAPI(title="Macro Ternary local server", docs_url="/admin/docs")
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+        allow_origins=["http://127.0.0.1:8000", "http://localhost:8000"],
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # ─── admin JSON endpoints (photo pipeline scaffold) ───────────────────
 
     @app.get("/admin/api/health")
     def health() -> dict:
@@ -81,7 +95,7 @@ def create_app() -> FastAPI:
     @app.post("/admin/api/upload")
     async def upload_label(file: UploadFile) -> dict:
         # Persistence is left to the CLI workflow; this endpoint just
-        # acknowledges the file so the admin UI can show the queue layout.
+        # acknowledges the upload so the admin UI can show the queue layout.
         return {"filename": file.filename, "size": (await file.read()).__len__()}
 
     @app.post("/admin/api/products/approve")
@@ -94,7 +108,9 @@ def create_app() -> FastAPI:
         if req.food_family_slug:
             fam = db.query(FoodFamily).filter_by(slug=req.food_family_slug).one_or_none()
             if fam is None:
-                raise HTTPException(status_code=400, detail=f"unknown family: {req.food_family_slug}")
+                raise HTTPException(
+                    status_code=400, detail=f"unknown family: {req.food_family_slug}"
+                )
             family_id = fam.id
 
         c = req.candidate
@@ -130,6 +146,69 @@ def create_app() -> FastAPI:
                 attempt.product_id = product.id
         db.commit()
         return {"id": product.id, "confidence": outcome.confidence}
+
+    # ─── recipe estimator (§9) ────────────────────────────────────────────
+
+    @app.post("/api/recipe")
+    async def estimate_recipe(req: RecipeRequest, request: Request) -> JSONResponse:
+        ip = request.client.host if request.client else "unknown"
+        if not recipe_mod.rate_limit_ok(ip):
+            return JSONResponse(
+                {"error": "rate_limit", "message": "3 requests per minute. Try again shortly."},
+                status_code=429,
+            )
+
+        text = (req.text or "").strip()
+        if not text:
+            return JSONResponse({"error": "empty_input"}, status_code=400)
+        if len(text) > 2000:
+            return JSONResponse({"error": "too_long"}, status_code=400)
+
+        estimator = recipe_mod.get_estimator()
+        if estimator is None:
+            return JSONResponse(
+                {
+                    "error": "no_estimator_configured",
+                    "message": (
+                        "Set OPENAI_API_KEY in the environment before starting "
+                        "the server, or use manual entry."
+                    ),
+                },
+                status_code=503,
+            )
+
+        try:
+            result = await estimator.estimate(text)
+        except Exception as e:
+            return JSONResponse(
+                {"error": "llm_unavailable", "message": str(e)}, status_code=502
+            )
+
+        if result.error == "not_a_recipe":
+            return JSONResponse(result.model_dump())
+
+        problem = recipe_mod.sanity_check(result)
+        if problem:
+            return JSONResponse(
+                {"error": "sanity_check_failed", "message": problem}, status_code=422
+            )
+        return JSONResponse(result.model_dump())
+
+    # ─── static frontend ──────────────────────────────────────────────────
+
+    if FRONTEND_DIR.is_dir():
+        # Serve js/, data/, styles.css from disk.
+        app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
+        if (FRONTEND_DIR / "data").is_dir():
+            app.mount("/data", StaticFiles(directory=FRONTEND_DIR / "data"), name="data")
+
+        @app.get("/styles.css", include_in_schema=False)
+        def styles() -> FileResponse:
+            return FileResponse(FRONTEND_DIR / "styles.css", media_type="text/css")
+
+        @app.get("/", include_in_schema=False)
+        def index() -> FileResponse:
+            return FileResponse(FRONTEND_DIR / "index.html")
 
     return app
 

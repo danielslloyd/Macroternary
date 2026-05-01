@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./macroternary.db"
     family_seed_path: Path = Path("./seeds/food_families.json")
-    snapshot_out_dir: Path = Path("./public")
+    snapshot_out_dir: Path = Path("../frontend/data")
     admin_host: str = "127.0.0.1"
     admin_port: int = 8000
 

@@ -8,10 +8,10 @@
 import { ternaryToXY } from "./geometry.js";
 
 const LEVELS = [
-  { pct: 0.3, label: "13.3" },
+  { pct: 0.8, label: "5" },
+  { pct: 0.4, label: "10" },
   { pct: 0.2, label: "20" },
-  { pct: 0.1, label: "40" },
-  { pct: 0.05, label: "80" },
+  { pct: 0.133, label: "30" },
 ];
 
 export function isolines(bounds) {

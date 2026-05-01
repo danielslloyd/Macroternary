@@ -63,11 +63,10 @@ Return STRICT JSON only, matching this schema:
 
 
 class OpenAIEstimator:
-    name = "openai_gpt-4o-mini"
-
     def __init__(self, api_key: str, model: str = "gpt-4o-mini") -> None:
         self.api_key = api_key
         self.model = model
+        self.name = f"openai_{model}"
 
     async def estimate(self, text: str) -> EstimatedRecipe:
         body = {
@@ -90,15 +89,119 @@ class OpenAIEstimator:
         return EstimatedRecipe.model_validate(json.loads(content))
 
 
-def get_estimator() -> RecipeEstimator | None:
-    """Return the configured estimator, or None if no provider is configured."""
-    provider = os.getenv("MT_RECIPE_LLM_PROVIDER", "openai")
+class AnthropicEstimator:
+    def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022") -> None:
+        self.api_key = api_key
+        self.model = model
+        self.name = f"anthropic_{model}"
+
+    async def estimate(self, text: str) -> EstimatedRecipe:
+        body = {
+            "model": self.model,
+            "max_tokens": 2048,
+            "system": SYSTEM_PROMPT,
+            "messages": [
+                {"role": "user", "content": f"Recipe:\n{text}\n\nRespond with strict JSON."},
+            ],
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "authorization": f"Bearer {self.api_key}",
+                    "anthropic-version": "2023-06-01",
+                },
+                json=body,
+            )
+        resp.raise_for_status()
+        content = resp.json()["content"][0]["text"]
+        return EstimatedRecipe.model_validate(json.loads(content))
+
+
+class GoogleEstimator:
+    def __init__(self, api_key: str, model: str = "gemini-2.0-flash") -> None:
+        self.api_key = api_key
+        self.model = model
+        self.name = f"google_{model}"
+
+    async def estimate(self, text: str) -> EstimatedRecipe:
+        body = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {"text": SYSTEM_PROMPT},
+                        {"text": f"Recipe:\n{text}\n\nRespond with strict JSON."},
+                    ],
+                }
+            ],
+            "generationConfig": {"temperature": 0.1},
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}",
+                json=body,
+            )
+        resp.raise_for_status()
+        content = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+        return EstimatedRecipe.model_validate(json.loads(content))
+
+
+class GrokEstimator:
+    def __init__(self, api_key: str, model: str = "grok-3") -> None:
+        self.api_key = api_key
+        self.model = model
+        self.name = f"grok_{model}"
+
+    async def estimate(self, text: str) -> EstimatedRecipe:
+        body = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Recipe:\n{text}\n\nRespond with strict JSON."},
+            ],
+            "temperature": 0.1,
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://api.x.ai/v1/chat/completions",
+                headers={"authorization": f"Bearer {self.api_key}"},
+                json=body,
+            )
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+        return EstimatedRecipe.model_validate(json.loads(content))
+
+
+def get_estimator(provider: str | None = None, model: str | None = None) -> RecipeEstimator | None:
+    """Return the configured estimator for a provider, or None if no key is set."""
     if provider == "openai":
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             return None
-        return OpenAIEstimator(api_key, os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
-    raise RuntimeError(f"unknown MT_RECIPE_LLM_PROVIDER: {provider}")
+        return OpenAIEstimator(api_key, model or "gpt-4o-mini")
+    elif provider == "anthropic":
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            return None
+        return AnthropicEstimator(api_key, model or "claude-3-5-sonnet-20241022")
+    elif provider == "google":
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            return None
+        return GoogleEstimator(api_key, model or "gemini-2.0-flash")
+    elif provider == "grok":
+        api_key = os.getenv("GROK_API_KEY")
+        if not api_key:
+            return None
+        return GrokEstimator(api_key, model or "grok-3")
+    else:
+        # Fallback: try providers in order of preference
+        for p in ["openai", "anthropic", "google", "grok"]:
+            est = get_estimator(p, model)
+            if est:
+                return est
+        return None
 
 
 # ─── sanity check ─────────────────────────────────────────────────────────

@@ -96,6 +96,13 @@ const MODAL_TEMPLATE = `
         </p>
       </div>
 
+      <label class="text-xs">
+        Model
+        <select data-model-select class="mt-0.5 w-full px-2 py-1 border border-gray-300 rounded text-sm">
+          <option>No models available</option>
+        </select>
+      </label>
+
       <textarea data-llm-text rows="3"
                 placeholder="1 cup oats, 1 tbsp peanut butter, 1 scoop whey, 1 banana"
                 class="w-full px-2 py-1 border border-gray-300 rounded text-sm font-mono"></textarea>
@@ -159,6 +166,25 @@ export async function openRecipeModal({ onAdd }) {
   const fEl = card.querySelector("[data-mt-f]");
   const llmTextEl = card.querySelector("[data-llm-text]");
   const llmStatusEl = card.querySelector("[data-llm-status]");
+  const modelSelectEl = card.querySelector("[data-model-select]");
+
+  // Populate model selector with available models
+  const availableModels = [];
+  providers.forEach((provider) => {
+    if (provider.available) {
+      provider.models.forEach((model) => {
+        const option = document.createElement("option");
+        option.value = `${provider.provider}:${model.name}`;
+        option.textContent = `${provider.label} – ${model.name}`;
+        modelSelectEl.appendChild(option);
+      });
+    }
+  });
+
+  // Pre-select first available model
+  if (modelSelectEl.children.length > 0) {
+    modelSelectEl.selectedIndex = 0;
+  }
 
   card.addEventListener("click", async (e) => {
     const action = e.target.closest("[data-action]")?.dataset.action;
@@ -195,12 +221,20 @@ export async function openRecipeModal({ onAdd }) {
         llmStatusEl.textContent = "Type a few ingredients first.";
         return;
       }
+
+      const modelValue = modelSelectEl.value;
+      if (!modelValue || modelValue === "No models available") {
+        llmStatusEl.textContent = "No model selected.";
+        return;
+      }
+
       llmStatusEl.textContent = "Estimating…";
+      const [provider, model] = modelValue.split(":");
       try {
         const res = await fetch("/api/recipe", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({ text, provider, model }),
         });
         const data = await res.json();
         if (!res.ok) {

@@ -62,6 +62,6 @@ echo.
 echo [Starting server with debug logging...]
 echo.
 set PYTHONUNBUFFERED=1
-uv run mt serve --log-level debug
+uv run mt serve
 
 pause

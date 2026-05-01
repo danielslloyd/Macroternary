@@ -20,5 +20,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
-frontend/data/api-keys.json
+
+# Local API keys (sensitive)
 frontend/data/api-keys.json

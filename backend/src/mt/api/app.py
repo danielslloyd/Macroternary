@@ -46,6 +46,8 @@ class ApproveRequest(BaseModel):
 
 class RecipeRequest(BaseModel):
     text: str
+    provider: str | None = None
+    model: str | None = None
 
 
 def create_app() -> FastAPI:
@@ -164,14 +166,15 @@ def create_app() -> FastAPI:
         if len(text) > 2000:
             return JSONResponse({"error": "too_long"}, status_code=400)
 
-        estimator = recipe_mod.get_estimator()
+        estimator = recipe_mod.get_estimator(req.provider, req.model)
         if estimator is None:
             return JSONResponse(
                 {
                     "error": "no_estimator_configured",
                     "message": (
-                        "Set OPENAI_API_KEY in the environment before starting "
-                        "the server, or use manual entry."
+                        "No LLM provider configured. Set one of: "
+                        "OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY, or GROK_API_KEY "
+                        "in the environment, or use manual entry."
                     ),
                 },
                 status_code=503,

@@ -1,21 +1,24 @@
 """Recipe macro estimator (spec §9).
 
 For the local sandbox, the LLM call lives behind a FastAPI route on the
-same server that serves the frontend. v1 ships with OpenAI gpt-4o-mini;
-add a sibling implementation and key off `MT_RECIPE_LLM_PROVIDER` to swap.
+same server that serves the frontend. Supports multiple providers:
+- OpenAI, Anthropic, Google, Grok
 
-If `OPENAI_API_KEY` isn't set, the endpoint returns 503 so the frontend
-can fall back to manual entry.
+API keys are read from environment variables or api-keys.json in the frontend/data directory.
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
+from pathlib import Path
 from typing import Literal, Protocol
 
 import httpx
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 # ─── interface ────────────────────────────────────────────────────────────
 
@@ -173,34 +176,90 @@ class GrokEstimator:
         return EstimatedRecipe.model_validate(json.loads(content))
 
 
+def _load_api_keys() -> dict[str, str]:
+    """Load API keys from api-keys.json or environment variables."""
+    keys = {}
+
+    # Try to load from api-keys.json first
+    api_keys_path = Path(__file__).resolve().parents[4] / "frontend" / "data" / "api-keys.json"
+    logger.info(f"Looking for api-keys.json at: {api_keys_path}")
+
+    if api_keys_path.exists():
+        try:
+            with open(api_keys_path) as f:
+                keys = json.load(f)
+            logger.info(f"Loaded API keys from {api_keys_path}: {list(keys.keys())}")
+        except Exception as e:
+            logger.error(f"Failed to load api-keys.json: {e}")
+    else:
+        logger.warning(f"api-keys.json not found at {api_keys_path}")
+
+    # Also check environment variables (they override api-keys.json)
+    for provider in ["openai", "anthropic", "google", "grok"]:
+        env_var = f"{provider.upper()}_API_KEY"
+        env_key = os.getenv(env_var)
+        if env_key:
+            keys[provider] = env_key
+            logger.info(f"Loaded {provider} key from environment variable {env_var}")
+
+    logger.info(f"Final API keys available: {list(keys.keys())}")
+    return keys
+
+
+_API_KEYS_CACHE = None
+
+
+def get_api_keys() -> dict[str, str]:
+    """Get cached API keys."""
+    global _API_KEYS_CACHE
+    if _API_KEYS_CACHE is None:
+        _API_KEYS_CACHE = _load_api_keys()
+    return _API_KEYS_CACHE
+
+
 def get_estimator(provider: str | None = None, model: str | None = None) -> RecipeEstimator | None:
     """Return the configured estimator for a provider, or None if no key is set."""
+    keys = get_api_keys()
+    logger.info(f"get_estimator called: provider={provider}, model={model}")
+
     if provider == "openai":
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = keys.get("openai")
         if not api_key:
+            logger.warning("OpenAI key not found")
             return None
+        logger.info(f"Using OpenAI with model {model or 'gpt-4o-mini'}")
         return OpenAIEstimator(api_key, model or "gpt-4o-mini")
     elif provider == "anthropic":
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+        api_key = keys.get("anthropic")
         if not api_key:
+            logger.warning("Anthropic key not found")
             return None
+        logger.info(f"Using Anthropic with model {model or 'claude-3-5-sonnet-20241022'}")
         return AnthropicEstimator(api_key, model or "claude-3-5-sonnet-20241022")
     elif provider == "google":
-        api_key = os.getenv("GOOGLE_API_KEY")
+        api_key = keys.get("google")
         if not api_key:
+            logger.warning("Google key not found")
             return None
+        logger.info(f"Using Google with model {model or 'gemini-2.0-flash'}")
         return GoogleEstimator(api_key, model or "gemini-2.0-flash")
     elif provider == "grok":
-        api_key = os.getenv("GROK_API_KEY")
+        api_key = keys.get("grok")
         if not api_key:
+            logger.warning("Grok key not found")
             return None
+        logger.info(f"Using Grok with model {model or 'grok-3'}")
         return GrokEstimator(api_key, model or "grok-3")
     else:
-        # Fallback: try providers in order of preference
+        # Fallback: try providers in order
+        logger.info(f"No provider specified, trying providers in order: {list(keys.keys())}")
         for p in ["openai", "anthropic", "google", "grok"]:
-            est = get_estimator(p, model)
-            if est:
-                return est
+            if p in keys:
+                est = get_estimator(p, model)
+                if est:
+                    logger.info(f"Using fallback provider: {p}")
+                    return est
+        logger.error("No API keys configured for any provider")
         return None
 
 
@@ -225,8 +284,9 @@ def sanity_check(recipe: EstimatedRecipe) -> str | None:
 
 
 # ─── per-IP rate limiting (in-memory; per-process) ────────────────────────
+# Disabled for development; set _RPM to a low number to re-enable
 
-_RPM = 3
+_RPM = 1000  # Effectively disabled; set to 3 for production
 _buckets: dict[str, dict[str, float]] = {}
 
 
@@ -235,8 +295,11 @@ def rate_limit_ok(ip: str) -> bool:
     bucket = _buckets.get(ip)
     if not bucket or bucket["reset_at"] < now:
         _buckets[ip] = {"count": 1, "reset_at": now + 60}
+        logger.info(f"Rate limit reset for {ip}")
         return True
     if bucket["count"] >= _RPM:
+        logger.warning(f"Rate limit exceeded for {ip} ({bucket['count']}/{_RPM} requests)")
         return False
     bucket["count"] += 1
+    logger.debug(f"Rate limit OK for {ip} ({bucket['count']}/{_RPM} requests)")
     return True

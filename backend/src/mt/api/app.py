@@ -9,6 +9,7 @@ Bound to 127.0.0.1 by default; never exposed publicly.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Iterator
 
@@ -23,6 +24,8 @@ from mt.api import recipe as recipe_mod
 from mt.db.models import ExtractionAttempt, FoodFamily, Product, Source
 from mt.db.session import SessionLocal
 from mt.validators import ProductCandidate, validate_product
+
+logger = logging.getLogger(__name__)
 
 # Repo root: backend/src/mt/api/app.py → up four = backend/, up five = repo root.
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -154,47 +157,60 @@ def create_app() -> FastAPI:
     @app.post("/api/recipe")
     async def estimate_recipe(req: RecipeRequest, request: Request) -> JSONResponse:
         ip = request.client.host if request.client else "unknown"
+        logger.info(f"Recipe request from {ip}: provider={req.provider}, model={req.model}")
+        logger.debug(f"Recipe text: {req.text[:100]}...")
+
         if not recipe_mod.rate_limit_ok(ip):
+            logger.warning(f"Rate limit exceeded for {ip}")
             return JSONResponse(
-                {"error": "rate_limit", "message": "3 requests per minute. Try again shortly."},
+                {"error": "rate_limit", "message": "Too many requests. Try again shortly."},
                 status_code=429,
             )
 
         text = (req.text or "").strip()
         if not text:
+            logger.warning("Empty recipe text")
             return JSONResponse({"error": "empty_input"}, status_code=400)
         if len(text) > 2000:
+            logger.warning(f"Recipe text too long: {len(text)} chars")
             return JSONResponse({"error": "too_long"}, status_code=400)
 
+        logger.info(f"Getting estimator for {req.provider} / {req.model}")
         estimator = recipe_mod.get_estimator(req.provider, req.model)
         if estimator is None:
+            logger.error(f"No estimator found for provider={req.provider}, model={req.model}")
             return JSONResponse(
                 {
                     "error": "no_estimator_configured",
                     "message": (
-                        "No LLM provider configured. Set one of: "
-                        "OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY, or GROK_API_KEY "
-                        "in the environment, or use manual entry."
+                        "No LLM provider configured. Add API keys to frontend/data/api-keys.json "
+                        "or set environment variables: OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY, GROK_API_KEY"
                     ),
                 },
                 status_code=503,
             )
 
+        logger.info(f"Using estimator: {estimator.name}")
         try:
             result = await estimator.estimate(text)
+            logger.info(f"Estimation successful with {estimator.name}")
         except Exception as e:
+            logger.error(f"LLM call failed: {e}", exc_info=True)
             return JSONResponse(
                 {"error": "llm_unavailable", "message": str(e)}, status_code=502
             )
 
         if result.error == "not_a_recipe":
+            logger.info("Input recognized as not a recipe")
             return JSONResponse(result.model_dump())
 
         problem = recipe_mod.sanity_check(result)
         if problem:
+            logger.warning(f"Sanity check failed: {problem}")
             return JSONResponse(
                 {"error": "sanity_check_failed", "message": problem}, status_code=422
             )
+        logger.info("Recipe estimation complete")
         return JSONResponse(result.model_dump())
 
     # ─── static frontend ──────────────────────────────────────────────────

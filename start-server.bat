@@ -58,6 +58,10 @@ echo.
 start http://127.0.0.1:8000
 timeout /t 2 /nobreak >nul
 cd backend
-uv run mt serve
+echo.
+echo [Starting server with debug logging...]
+echo.
+set PYTHONUNBUFFERED=1
+uv run mt serve --log-level debug
 
 pause

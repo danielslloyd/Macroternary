@@ -155,8 +155,8 @@ def create_app() -> FastAPI:
     # ─── recipe estimator (§9) ────────────────────────────────────────────
 
     @app.post("/api/recipe/extract-label")
-    async def extract_label(file: UploadFile, provider: str | None = None, model: str | None = None, request: Request | None = None) -> JSONResponse:
-        ip = request.client.host if request and request.client else "unknown"
+    async def extract_label(file: UploadFile, provider: str | None = None, model: str | None = None, request: Request) -> JSONResponse:
+        ip = request.client.host if request.client else "unknown"
         logger.info(f"Label extraction request from {ip}: provider={provider}, model={model}")
 
         if not recipe_mod.rate_limit_ok(ip):

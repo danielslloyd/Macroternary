@@ -52,18 +52,31 @@ class RecipeEstimator(Protocol):
 
 # ─── OpenAI implementation ────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """You estimate the macronutrients of a freeform recipe.
-Return STRICT JSON only, matching this schema:
+SYSTEM_PROMPT = """You estimate the macronutrients of a freeform food input.
+
+First, classify the input:
+  A) A single food item (e.g. "banana", "100g chicken breast", "1 cup oats").
+  B) A multi-ingredient recipe (e.g. "1 cup oats, 1 tbsp peanut butter, 1 banana").
+  C) Not food at all (greeting, gibberish, single non-food word).
+
+Return STRICT JSON only.
+
+For (A) — single item: return one item plus matching totals:
 {
-  "items": [{"ingredient": str, "quantity_g": number?, "kcal": number, "p": number, "c": number, "f": number}, ...],
+  "items": [{"ingredient": str, "quantity_g": number?, "kcal": number, "p": number, "c": number, "f": number}],
   "totals": {"kcal": number, "p": number, "c": number, "f": number},
   "assumptions": [str, ...],
   "confidence": "high" | "medium" | "low"
 }
+
+For (B) — multi-ingredient recipe: same schema, one entry per ingredient and totals as the sum.
+
+For (C) — not food: return {"error": "not_a_recipe"} only.
+
+Rules:
 - Use grams for quantity_g whenever possible.
 - p, c, f are grams of protein/carbs/fat per item; kcal is total per item.
 - Note any unit/variety guess (e.g. 'assumed rolled oats, dry weight') in 'assumptions'.
-- If the input is not a recipe (greeting, single non-food word), return {"error": "not_a_recipe"} only.
 - Macros must roughly satisfy 4P + 4C + 9F ≈ kcal per item.
 """
 

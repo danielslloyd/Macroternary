@@ -154,6 +154,25 @@ def create_app() -> FastAPI:
 
     # ─── recipe estimator (§9) ────────────────────────────────────────────
 
+    @app.get("/api/ollama/tags")
+    async def ollama_tags() -> JSONResponse:
+        """Return models pulled in the local Ollama instance, or an empty list."""
+        import httpx
+
+        base_url = (
+            __import__("os").getenv("OLLAMA_HOST") or "http://127.0.0.1:11434"
+        ).rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.get(f"{base_url}/api/tags")
+            resp.raise_for_status()
+            data = resp.json()
+            models = [m.get("name") for m in data.get("models", []) if m.get("name")]
+            return JSONResponse({"models": models})
+        except Exception as e:
+            logger.info(f"Ollama tags unavailable: {e}")
+            return JSONResponse({"models": [], "error": "ollama_unavailable"})
+
     @app.post("/api/recipe/extract-label")
     async def extract_label(request: Request, file: UploadFile, provider: str | None = Form(None), model: str | None = Form(None)) -> JSONResponse:
         ip = request.client.host if request.client else "unknown"
@@ -279,6 +298,8 @@ def create_app() -> FastAPI:
         app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
         if (FRONTEND_DIR / "data").is_dir():
             app.mount("/data", StaticFiles(directory=FRONTEND_DIR / "data"), name="data")
+        if (FRONTEND_DIR / "icons").is_dir():
+            app.mount("/icons", StaticFiles(directory=FRONTEND_DIR / "icons"), name="icons")
 
         @app.get("/styles.css", include_in_schema=False)
         def styles() -> FileResponse:

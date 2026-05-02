@@ -7,7 +7,8 @@ import { renderTernary } from "./ternary.js";
 import { renderSidebar } from "./filters.js";
 import { renderDetail } from "./detail.js";
 import {
-  openRecipeModal,
+  openManualModal,
+  openAIModal,
   readRecipesFromHash,
   writeRecipesToHash,
 } from "./recipe.js";
@@ -109,15 +110,18 @@ function showBanner(message, kind = "error") {
   el.classList.remove("hidden");
 }
 
-document.getElementById("recipe-btn").addEventListener("click", () => {
-  openRecipeModal({
-    onAdd: (recipe) => {
-      // Spec §9: cap of 5 active recipes.
-      const next = [...state.recipes, recipe].slice(-5);
-      setState({ recipes: next });
-    },
-  });
-});
+function addRecipe(recipe) {
+  // Spec §9: cap of 5 active recipes.
+  const next = [...state.recipes, recipe].slice(-5);
+  setState({ recipes: next });
+}
+
+document
+  .getElementById("manual-btn")
+  .addEventListener("click", () => openManualModal({ onAdd: addRecipe }));
+document
+  .getElementById("ai-btn")
+  .addEventListener("click", () => openAIModal({ onAdd: addRecipe }));
 
 // Initial load.
 async function start() {

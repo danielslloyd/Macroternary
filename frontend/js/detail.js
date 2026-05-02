@@ -70,31 +70,11 @@ function renderRecipes(recipes) {
               ${escapeHtml(r.confidence)}
             </span>
           </div>
-          <p class="text-xs text-gray-600">
-            ${Math.round(r.totals.kcal)} kcal · ${Math.round(r.totals.p)}P /
-            ${Math.round(r.totals.c)}C / ${Math.round(r.totals.f)}F
-          </p>
+          ${renderMacroTable(r)}
           ${
             r.assumptions?.length
               ? `<p class="text-xs italic text-amber-900"><strong>Assumptions:</strong>
                  ${escapeHtml(r.assumptions.join("; "))}</p>`
-              : ""
-          }
-          ${
-            r.items?.length
-              ? `<details class="text-xs">
-                  <summary class="cursor-pointer text-gray-600">Ingredients</summary>
-                  <ul class="mt-1 ml-4 list-disc space-y-0.5">
-                    ${r.items
-                      .map(
-                        (it) => `
-                      <li>${escapeHtml(it.ingredient)}${
-                          it.quantity_g ? ` (${it.quantity_g} g)` : ""
-                        } · ${Math.round(it.kcal)} kcal</li>`,
-                      )
-                      .join("")}
-                  </ul>
-                </details>`
               : ""
           }
           <button data-remove-recipe="${escapeHtml(r.id)}" type="button"
@@ -105,6 +85,54 @@ function renderRecipes(recipes) {
         )
         .join("")}
     </div>
+  `;
+}
+
+function renderMacroTable(r) {
+  const t = r.totals || {};
+  const items = Array.isArray(r.items) ? r.items : [];
+  const showItems = items.length > 1;
+  const num = (n) => (Number.isFinite(n) ? Math.round(n) : "—");
+
+  const rows = showItems
+    ? items
+        .map(
+          (it) => `
+        <tr class="border-b border-gray-100">
+          <td class="px-1 py-0.5 truncate max-w-[120px]" title="${escapeHtml(it.ingredient)}">
+            ${escapeHtml(it.ingredient)}${it.quantity_g ? ` <span class="text-gray-400">(${num(it.quantity_g)}g)</span>` : ""}
+          </td>
+          <td class="text-right px-1 py-0.5">${num(it.kcal)}</td>
+          <td class="text-right px-1 py-0.5">${num(it.p)}</td>
+          <td class="text-right px-1 py-0.5">${num(it.c)}</td>
+          <td class="text-right px-1 py-0.5">${num(it.f)}</td>
+        </tr>`,
+        )
+        .join("")
+    : "";
+
+  return `
+    <table class="w-full text-xs border-collapse">
+      <thead>
+        <tr class="border-b border-gray-300 text-gray-500">
+          <th class="text-left font-semibold px-1 py-1">${showItems ? "Item" : ""}</th>
+          <th class="text-right font-semibold px-1 py-1">kcal</th>
+          <th class="text-right font-semibold px-1 py-1">P</th>
+          <th class="text-right font-semibold px-1 py-1">C</th>
+          <th class="text-right font-semibold px-1 py-1">F</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+        <tr class="border-t-2 border-gray-400 font-semibold">
+          <td class="px-1 py-0.5">${showItems ? "Total" : escapeHtml(items[0]?.ingredient || "Total")}</td>
+          <td class="text-right px-1 py-0.5">${num(t.kcal)}</td>
+          <td class="text-right px-1 py-0.5">${num(t.p)}</td>
+          <td class="text-right px-1 py-0.5">${num(t.c)}</td>
+          <td class="text-right px-1 py-0.5">${num(t.f)}</td>
+        </tr>
+      </tbody>
+    </table>
   `;
 }
 

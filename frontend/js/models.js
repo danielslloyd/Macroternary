@@ -1,40 +1,43 @@
-// Models configuration by provider, with colors based on API key availability.
+// Models configuration by provider.
+// Icon path + capability metadata + key availability.
 
 const PROVIDER_CONFIGS = {
   anthropic: {
     label: "Anthropic",
+    icon: "/icons/anthropic.svg",
     models: ["claude-3-5-sonnet-20241022", "claude-3-opus-20250219", "claude-3-haiku-20240307"],
-    colorWithKey: "#d97706",
-    colorWithoutKey: "#fed7aa",
+    capabilities: ["text", "image"],
   },
   openai: {
     label: "OpenAI",
+    icon: "/icons/openai.svg",
     models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
-    colorWithKey: "#059669",
-    colorWithoutKey: "#d1fae5",
+    capabilities: ["text", "image"],
   },
   grok: {
     label: "Grok",
+    icon: "/icons/grok.svg",
     models: ["grok-3"],
-    colorWithKey: "#8b5cf6",
-    colorWithoutKey: "#e9d5ff",
+    capabilities: ["text"],
   },
   google: {
     label: "Google",
+    icon: "/icons/google.svg",
     models: ["gemini-2.0-flash", "gemini-1.5-pro"],
-    colorWithKey: "#0891b2",
-    colorWithoutKey: "#cffafe",
+    capabilities: ["text", "image"],
   },
   ollama: {
-    label: "Ollama (Local)",
-    models: ["mistral", "neural-chat", "openchat", "orca-mini"],
-    colorWithKey: "#7c3aed",
-    colorWithoutKey: "#ede9fe",
+    label: "Ollama",
+    icon: "/icons/ollama.svg",
+    models: [],
+    capabilities: ["text"],
     alwaysAvailable: true,
+    dynamic: true,
   },
 };
 
 let apiKeys = {};
+let ollamaModels = [];
 
 export async function loadApiKeys() {
   try {
@@ -47,35 +50,64 @@ export async function loadApiKeys() {
   }
 }
 
+export async function loadOllamaModels() {
+  try {
+    const res = await fetch("/api/ollama/tags");
+    if (res.ok) {
+      const data = await res.json();
+      ollamaModels = Array.isArray(data.models) ? data.models : [];
+    } else {
+      ollamaModels = [];
+    }
+  } catch (err) {
+    console.warn("Could not load Ollama tags:", err.message);
+    ollamaModels = [];
+  }
+  PROVIDER_CONFIGS.ollama.models = ollamaModels;
+}
+
 function hasKey(provider) {
   return !!(apiKeys[provider] && apiKeys[provider].trim());
 }
 
-export function getModelsByProvider() {
-  return Object.entries(PROVIDER_CONFIGS).map(([provider, config]) => {
-    const hasApiKey = hasKey(provider);
-    const available = config.alwaysAvailable || hasApiKey;
-    return {
-      provider,
-      label: config.label,
-      color: available ? config.colorWithKey : config.colorWithoutKey,
-      available,
-      models: config.models.map((model) => ({
-        name: model,
-        provider,
-      })),
-    };
-  });
+function isAvailable(provider) {
+  const cfg = PROVIDER_CONFIGS[provider];
+  if (!cfg) return false;
+  if (cfg.alwaysAvailable) {
+    // Ollama is "available" only if at least one model is pulled.
+    return cfg.models.length > 0;
+  }
+  return hasKey(provider);
 }
 
-export function getAvailableModels() {
+export function getModelsByProvider() {
+  return Object.entries(PROVIDER_CONFIGS).map(([provider, config]) => ({
+    provider,
+    label: config.label,
+    icon: config.icon,
+    capabilities: config.capabilities,
+    available: isAvailable(provider),
+    models: config.models.map((model) => ({
+      name: model,
+      provider,
+      capabilities: config.capabilities,
+    })),
+  }));
+}
+
+export function getAvailableModels({ requireImage = false } = {}) {
   return Object.entries(PROVIDER_CONFIGS)
-    .filter(([provider]) => hasKey(provider))
+    .filter(([provider, cfg]) => {
+      if (!isAvailable(provider)) return false;
+      if (requireImage && !cfg.capabilities.includes("image")) return false;
+      return true;
+    })
     .flatMap(([provider, config]) =>
       config.models.map((model) => ({
         name: model,
         provider,
         label: `${config.label} – ${model}`,
+        capabilities: config.capabilities,
       }))
     );
 }

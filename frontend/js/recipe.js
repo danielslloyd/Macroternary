@@ -57,6 +57,24 @@ const MODAL_TEMPLATE = `
     <h2 class="text-lg font-semibold">Add a recipe</h2>
 
     <div class="border border-gray-200 rounded p-3 space-y-3">
+      <h3 class="text-sm font-semibold">Upload nutrition label</h3>
+      <p class="text-xs text-gray-600">Take a photo of a nutrition facts label and we'll extract the macros.</p>
+      <input data-label-image type="file" accept="image/*" class="w-full text-xs" />
+      <img data-label-preview class="hidden max-h-40 rounded" />
+      <label class="text-xs">
+        Model
+        <select data-label-model class="mt-0.5 w-full px-2 py-1 border border-gray-300 rounded text-sm">
+          <option>No models available</option>
+        </select>
+      </label>
+      <button data-action="extract-label" type="button"
+              class="px-3 py-1.5 text-sm bg-ink text-white rounded">
+        Extract macros from label
+      </button>
+      <p data-label-status class="text-xs text-gray-500"></p>
+    </div>
+
+    <div class="border border-gray-200 rounded p-3 space-y-3">
       <h3 class="text-sm font-semibold">Manual entry</h3>
       <p class="text-xs text-gray-600">Type the totals you want plotted. Always works offline.</p>
       <input data-mt-title type="text" placeholder="Recipe title (optional)"
@@ -167,6 +185,10 @@ export async function openRecipeModal({ onAdd }) {
   const llmTextEl = card.querySelector("[data-llm-text]");
   const llmStatusEl = card.querySelector("[data-llm-status]");
   const modelSelectEl = card.querySelector("[data-model-select]");
+  const labelImageEl = card.querySelector("[data-label-image]");
+  const labelPreviewEl = card.querySelector("[data-label-preview]");
+  const labelModelEl = card.querySelector("[data-label-model]");
+  const labelStatusEl = card.querySelector("[data-label-status]");
 
   // Populate model selector with available models
   const availableModels = [];
@@ -185,6 +207,32 @@ export async function openRecipeModal({ onAdd }) {
   if (modelSelectEl.children.length > 0) {
     modelSelectEl.selectedIndex = 0;
   }
+
+  // Populate label model selector with vision-capable models only
+  const visionProviders = ["openai", "google", "anthropic"];
+  providers.forEach((provider) => {
+    if (provider.available && visionProviders.includes(provider.provider)) {
+      provider.models.forEach((model) => {
+        const option = document.createElement("option");
+        option.value = `${provider.provider}:${model.name}`;
+        option.textContent = `${provider.label} – ${model.name}`;
+        labelModelEl.appendChild(option);
+      });
+    }
+  });
+
+  // Image preview
+  labelImageEl.addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        labelPreviewEl.src = event.target?.result;
+        labelPreviewEl.classList.remove("hidden");
+      };
+      reader.readAsDataURL(file);
+    }
+  });
 
   card.addEventListener("click", async (e) => {
     const action = e.target.closest("[data-action]")?.dataset.action;
@@ -264,6 +312,59 @@ export async function openRecipeModal({ onAdd }) {
         close();
       } catch (err) {
         llmStatusEl.textContent = `Network error: ${err.message}`;
+      }
+    }
+
+    if (action === "extract-label") {
+      const file = labelImageEl.files?.[0];
+      if (!file) {
+        labelStatusEl.textContent = "Select an image first.";
+        return;
+      }
+
+      const modelValue = labelModelEl.value;
+      if (!modelValue || modelValue === "No models available") {
+        labelStatusEl.textContent = "No model selected.";
+        return;
+      }
+
+      labelStatusEl.textContent = "Extracting…";
+      const [provider, model] = modelValue.split(":");
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("provider", provider);
+      formData.append("model", model);
+
+      try {
+        const res = await fetch("/api/recipe/extract-label", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          labelStatusEl.textContent =
+            data.message || data.error || `Extraction failed (${res.status}).`;
+          return;
+        }
+        if (data.error === "not_a_label") {
+          labelStatusEl.textContent =
+            "That doesn't look like a nutrition label. Try a clearer image.";
+          return;
+        }
+        const t = data.totals;
+        const shares = calorieShares(t.p, t.c, t.f);
+        onAdd({
+          id: crypto.randomUUID(),
+          title: titleEl.value.trim() || "Label",
+          totals: t,
+          items: [],
+          assumptions: data.assumptions || [],
+          confidence: data.confidence || "medium",
+          ...shares,
+        });
+        close();
+      } catch (err) {
+        labelStatusEl.textContent = `Network error: ${err.message}`;
       }
     }
   });

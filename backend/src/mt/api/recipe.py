@@ -46,6 +46,9 @@ class RecipeEstimator(Protocol):
     async def estimate(self, text: str) -> EstimatedRecipe:
         ...
 
+    async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
+        ...
+
 
 # ─── OpenAI implementation ────────────────────────────────────────────────
 
@@ -62,6 +65,25 @@ Return STRICT JSON only, matching this schema:
 - Note any unit/variety guess (e.g. 'assumed rolled oats, dry weight') in 'assumptions'.
 - If the input is not a recipe (greeting, single non-food word), return {"error": "not_a_recipe"} only.
 - Macros must roughly satisfy 4P + 4C + 9F ≈ kcal per item.
+"""
+
+LABEL_PROMPT = """You extract macronutrient information from a nutrition facts label image.
+Return STRICT JSON only, matching this schema:
+{
+  "serving_size_g": number,
+  "kcal": number,
+  "p": number,
+  "c": number,
+  "f": number,
+  "assumptions": [str, ...],
+  "confidence": "high" | "medium" | "low"
+}
+- Serving size should be in grams; convert from oz/cups if needed (1 oz ≈ 28g, 1 cup varies).
+- p, c, f are grams of protein, carbs, fat per serving.
+- kcal is calories per serving.
+- Note any unclear values or estimates in 'assumptions'.
+- If the image doesn't contain a nutrition label, return {"error": "not_a_label"} only.
+- If values are illegible, estimate based on context and mark as low confidence.
 """
 
 
@@ -91,6 +113,34 @@ class OpenAIEstimator:
         content = resp.json()["choices"][0]["message"]["content"]
         return EstimatedRecipe.model_validate(json.loads(content))
 
+    async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
+        import base64
+
+        b64_image = base64.b64encode(image_data).decode()
+        body = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": LABEL_PROMPT},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Extract the macros from this nutrition label. Respond with strict JSON."},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}},
+                    ],
+                },
+            ],
+            "temperature": 0.1,
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"authorization": f"Bearer {self.api_key}"},
+                json=body,
+            )
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+        return EstimatedRecipe.model_validate(json.loads(content))
+
 
 class AnthropicEstimator:
     def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022") -> None:
@@ -105,6 +155,37 @@ class AnthropicEstimator:
             "system": SYSTEM_PROMPT,
             "messages": [
                 {"role": "user", "content": f"Recipe:\n{text}\n\nRespond with strict JSON."},
+            ],
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "authorization": f"Bearer {self.api_key}",
+                    "anthropic-version": "2023-06-01",
+                },
+                json=body,
+            )
+        resp.raise_for_status()
+        content = resp.json()["content"][0]["text"]
+        return EstimatedRecipe.model_validate(json.loads(content))
+
+    async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
+        import base64
+
+        b64_image = base64.b64encode(image_data).decode()
+        body = {
+            "model": self.model,
+            "max_tokens": 2048,
+            "system": LABEL_PROMPT,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Extract the macros from this nutrition label. Respond with strict JSON."},
+                        {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64_image}},
+                    ],
+                }
             ],
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -149,6 +230,32 @@ class GoogleEstimator:
         content = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
         return EstimatedRecipe.model_validate(json.loads(content))
 
+    async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
+        import base64
+
+        b64_image = base64.b64encode(image_data).decode()
+        body = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {"text": LABEL_PROMPT},
+                        {"inline_data": {"mime_type": "image/jpeg", "data": b64_image}},
+                        {"text": "Extract the macros from this nutrition label. Respond with strict JSON."},
+                    ],
+                }
+            ],
+            "generationConfig": {"temperature": 0.1},
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}",
+                json=body,
+            )
+        resp.raise_for_status()
+        content = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+        return EstimatedRecipe.model_validate(json.loads(content))
+
 
 class OllamaEstimator:
     def __init__(self, base_url: str = "http://127.0.0.1:11434", model: str = "mistral") -> None:
@@ -173,6 +280,9 @@ class OllamaEstimator:
         resp.raise_for_status()
         content = resp.json()["message"]["content"]
         return EstimatedRecipe.model_validate(json.loads(content))
+
+    async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
+        raise NotImplementedError("Ollama image extraction not yet implemented")
 
 
 class GrokEstimator:
@@ -199,6 +309,9 @@ class GrokEstimator:
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
         return EstimatedRecipe.model_validate(json.loads(content))
+
+    async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
+        raise NotImplementedError("Grok image extraction not yet implemented")
 
 
 def _load_api_keys() -> dict[str, str]:

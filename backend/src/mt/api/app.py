@@ -154,6 +154,65 @@ def create_app() -> FastAPI:
 
     # ─── recipe estimator (§9) ────────────────────────────────────────────
 
+    @app.post("/api/recipe/extract-label")
+    async def extract_label(file: UploadFile, provider: str | None = None, model: str | None = None, request: Request | None = None) -> JSONResponse:
+        ip = request.client.host if request and request.client else "unknown"
+        logger.info(f"Label extraction request from {ip}: provider={provider}, model={model}")
+
+        if not recipe_mod.rate_limit_ok(ip):
+            logger.warning(f"Rate limit exceeded for {ip}")
+            return JSONResponse(
+                {"error": "rate_limit", "message": "Too many requests. Try again shortly."},
+                status_code=429,
+            )
+
+        # Validate file type
+        if not file.filename or not any(file.filename.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif']):
+            logger.warning(f"Invalid file type: {file.filename}")
+            return JSONResponse({"error": "invalid_file_type", "message": "Only JPEG, PNG, and GIF images are supported."}, status_code=400)
+
+        try:
+            image_data = await file.read()
+            if len(image_data) > 10 * 1024 * 1024:  # 10MB limit
+                return JSONResponse({"error": "file_too_large", "message": "Image must be under 10MB."}, status_code=400)
+
+            logger.info(f"Getting estimator for label extraction: {provider} / {model}")
+            estimator = recipe_mod.get_estimator(provider, model)
+            if estimator is None:
+                logger.error(f"No estimator found for image extraction: provider={provider}")
+                return JSONResponse(
+                    {"error": "no_estimator_configured", "message": "No LLM provider configured for image extraction."},
+                    status_code=503,
+                )
+
+            logger.info(f"Extracting macros from label using {estimator.name}")
+            result = await estimator.extract_from_image(image_data)
+            logger.info(f"Label extraction successful with {estimator.name}")
+
+            if result.error == "not_a_label":
+                logger.info("Image doesn't contain a nutrition label")
+                return JSONResponse(result.model_dump())
+
+            problem = recipe_mod.sanity_check(result)
+            if problem:
+                logger.warning(f"Sanity check failed for label extraction: {problem}")
+                return JSONResponse(
+                    {"error": "sanity_check_failed", "message": problem}, status_code=422
+                )
+            logger.info("Label extraction complete")
+            return JSONResponse(result.model_dump())
+        except NotImplementedError as e:
+            logger.error(f"Image extraction not supported for this provider: {e}")
+            return JSONResponse(
+                {"error": "not_supported", "message": f"Image extraction not supported for this provider. Use Google or OpenAI."},
+                status_code=501,
+            )
+        except Exception as e:
+            logger.error(f"Label extraction failed: {e}", exc_info=True)
+            return JSONResponse(
+                {"error": "extraction_failed", "message": str(e)}, status_code=502
+            )
+
     @app.post("/api/recipe")
     async def estimate_recipe(req: RecipeRequest, request: Request) -> JSONResponse:
         ip = request.client.host if request.client else "unknown"

@@ -25,6 +25,13 @@ const PROVIDER_CONFIGS = {
     colorWithKey: "#0891b2",
     colorWithoutKey: "#cffafe",
   },
+  ollama: {
+    label: "Ollama (Local)",
+    models: ["mistral", "neural-chat", "openchat", "orca-mini"],
+    colorWithKey: "#7c3aed",
+    colorWithoutKey: "#ede9fe",
+    alwaysAvailable: true,
+  },
 };
 
 let apiKeys = {};
@@ -47,11 +54,12 @@ function hasKey(provider) {
 export function getModelsByProvider() {
   return Object.entries(PROVIDER_CONFIGS).map(([provider, config]) => {
     const hasApiKey = hasKey(provider);
+    const available = config.alwaysAvailable || hasApiKey;
     return {
       provider,
       label: config.label,
-      color: hasApiKey ? config.colorWithKey : config.colorWithoutKey,
-      available: hasApiKey,
+      color: available ? config.colorWithKey : config.colorWithoutKey,
+      available,
       models: config.models.map((model) => ({
         name: model,
         provider,

@@ -13,7 +13,7 @@ import logging
 from pathlib import Path
 from typing import Iterator
 
-from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -155,7 +155,7 @@ def create_app() -> FastAPI:
     # ─── recipe estimator (§9) ────────────────────────────────────────────
 
     @app.post("/api/recipe/extract-label")
-    async def extract_label(file: UploadFile, provider: str | None = None, model: str | None = None, request: Request) -> JSONResponse:
+    async def extract_label(request: Request, file: UploadFile, provider: str | None = Form(None), model: str | None = Form(None)) -> JSONResponse:
         ip = request.client.host if request.client else "unknown"
         logger.info(f"Label extraction request from {ip}: provider={provider}, model={model}")
 

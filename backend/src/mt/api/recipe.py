@@ -258,10 +258,34 @@ class GoogleEstimator:
 
 
 class OllamaEstimator:
-    def __init__(self, base_url: str = "http://127.0.0.1:11434", model: str = "mistral") -> None:
-        self.base_url = base_url
+    def __init__(self, base_url: str | None = None, model: str = "mistral") -> None:
+        self.base_url = (base_url or os.getenv("OLLAMA_HOST") or "http://127.0.0.1:11434").rstrip("/")
         self.model = model
         self.name = f"ollama_{model}"
+
+    async def _post_chat(self, body: dict) -> dict:
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(f"{self.base_url}/api/chat", json=body)
+        except httpx.ConnectError as e:
+            raise RuntimeError(
+                f"Could not reach Ollama at {self.base_url}. "
+                f"Make sure Ollama is running (`ollama serve`). Original: {e}"
+            ) from e
+
+        if resp.status_code == 404:
+            detail = ""
+            try:
+                detail = resp.json().get("error", "")
+            except Exception:
+                detail = resp.text.strip()
+            raise RuntimeError(
+                f"Ollama returned 404 for model '{self.model}'. "
+                f"Pull it first with `ollama pull {self.model}`. Detail: {detail or 'no details'}"
+            )
+
+        resp.raise_for_status()
+        return resp.json()
 
     async def estimate(self, text: str) -> EstimatedRecipe:
         body = {
@@ -270,15 +294,12 @@ class OllamaEstimator:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"Recipe:\n{text}\n\nRespond with strict JSON."},
             ],
+            "format": "json",
             "stream": False,
+            "options": {"temperature": 0.1},
         }
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{self.base_url}/api/chat",
-                json=body,
-            )
-        resp.raise_for_status()
-        content = resp.json()["message"]["content"]
+        data = await self._post_chat(body)
+        content = data["message"]["content"]
         return EstimatedRecipe.model_validate(json.loads(content))
 
     async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:

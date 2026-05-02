@@ -150,6 +150,31 @@ class GoogleEstimator:
         return EstimatedRecipe.model_validate(json.loads(content))
 
 
+class OllamaEstimator:
+    def __init__(self, base_url: str = "http://127.0.0.1:11434", model: str = "mistral") -> None:
+        self.base_url = base_url
+        self.model = model
+        self.name = f"ollama_{model}"
+
+    async def estimate(self, text: str) -> EstimatedRecipe:
+        body = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Recipe:\n{text}\n\nRespond with strict JSON."},
+            ],
+            "stream": False,
+        }
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{self.base_url}/api/chat",
+                json=body,
+            )
+        resp.raise_for_status()
+        content = resp.json()["message"]["content"]
+        return EstimatedRecipe.model_validate(json.loads(content))
+
+
 class GrokEstimator:
     def __init__(self, api_key: str, model: str = "grok-3") -> None:
         self.api_key = api_key
@@ -269,8 +294,12 @@ def get_estimator(provider: str | None = None, model: str | None = None) -> Reci
             return None
         logger.info(f"Using Grok with model {model or 'grok-3'}")
         return GrokEstimator(api_key, model or "grok-3")
+    elif provider == "ollama":
+        # Ollama runs locally, no API key needed
+        logger.info(f"Using Ollama with model {model or 'mistral'}")
+        return OllamaEstimator(model=model or "mistral")
     else:
-        # Fallback: try providers in order
+        # Fallback: try providers in order, then Ollama
         logger.info(f"No provider specified, trying providers in order: {list(keys.keys())}")
         for p in ["openai", "anthropic", "google", "grok"]:
             if p in keys:
@@ -278,7 +307,17 @@ def get_estimator(provider: str | None = None, model: str | None = None) -> Reci
                 if est:
                     logger.info(f"Using fallback provider: {p}")
                     return est
-        logger.error("No API keys configured for any provider")
+
+        # Try Ollama as last resort
+        logger.info("Trying Ollama as fallback...")
+        try:
+            est = OllamaEstimator(model=model or "mistral")
+            logger.info("Ollama available")
+            return est
+        except Exception as e:
+            logger.error(f"Ollama not available: {e}")
+
+        logger.error("No API keys or local LLM configured")
         return None
 
 

@@ -63,6 +63,10 @@ export async function loadOllamaModels() {
     console.warn("Could not load Ollama tags:", err.message);
     ollamaModels = [];
   }
+  // Always include a default model option for Ollama
+  if (ollamaModels.length === 0) {
+    ollamaModels = ["mistral"];
+  }
   PROVIDER_CONFIGS.ollama.models = ollamaModels;
 }
 
@@ -74,8 +78,8 @@ function isAvailable(provider) {
   const cfg = PROVIDER_CONFIGS[provider];
   if (!cfg) return false;
   if (cfg.alwaysAvailable) {
-    // Ollama is "available" only if at least one model is pulled.
-    return cfg.models.length > 0;
+    // Ollama is always available (no API key required)
+    return true;
   }
   return hasKey(provider);
 }

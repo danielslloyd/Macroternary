@@ -157,21 +157,21 @@ def create_app() -> FastAPI:
     @app.get("/api/ollama/tags")
     async def ollama_tags() -> JSONResponse:
         """Return models pulled in the local Ollama instance, or an empty list."""
+        import os
         import httpx
 
-        base_url = (
-            __import__("os").getenv("OLLAMA_HOST") or "http://127.0.0.1:11434"
-        ).rstrip("/")
+        base_url = (os.getenv("OLLAMA_HOST") or "http://127.0.0.1:11434").rstrip("/")
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(f"{base_url}/api/tags")
             resp.raise_for_status()
             data = resp.json()
             models = [m.get("name") for m in data.get("models", []) if m.get("name")]
+            logger.info(f"Ollama /api/tags returned {len(models)} models from {base_url}")
             return JSONResponse({"models": models})
         except Exception as e:
-            logger.info(f"Ollama tags unavailable: {e}")
-            return JSONResponse({"models": [], "error": "ollama_unavailable"})
+            logger.warning(f"Ollama tags unavailable at {base_url}: {e}")
+            return JSONResponse({"models": [], "error": "ollama_unavailable", "detail": str(e)})
 
     @app.post("/api/recipe/extract-label")
     async def extract_label(request: Request, file: UploadFile, provider: str | None = Form(None), model: str | None = Form(None)) -> JSONResponse:

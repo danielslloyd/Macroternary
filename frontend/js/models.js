@@ -73,10 +73,9 @@ function hasKey(provider) {
 function isAvailable(provider) {
   const cfg = PROVIDER_CONFIGS[provider];
   if (!cfg) return false;
-  if (cfg.alwaysAvailable) {
-    // Ollama is "available" only if at least one model is pulled.
-    return cfg.models.length > 0;
-  }
+  // Ollama is local — always "lit" regardless of whether models are pulled
+  // or the daemon is up. The model dropdown will simply be empty if not.
+  if (cfg.alwaysAvailable) return true;
   return hasKey(provider);
 }
 

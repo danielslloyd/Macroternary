@@ -214,7 +214,10 @@ export async function openAIModal({ onAdd }) {
   await Promise.all([loadApiKeys(), loadOllamaModels()]);
   const providers = getModelsByProvider();
 
-  // Icon row with outlined squares.
+  // Icon row: outlined rounded square per provider. Lit = colored border +
+  // original icon. Unlit = gray border + icon masked to a single gray so all
+  // disabled providers look visually identical regardless of logo internals.
+  const UNLIT_GRAY = "#9ca3af"; // Tailwind gray-400
   providers.forEach((p) => {
     const wrap = document.createElement("div");
     wrap.className = "flex flex-col items-center gap-1";
@@ -230,11 +233,19 @@ export async function openAIModal({ onAdd }) {
         : `${p.label} — no key`;
     }
     wrap.title = tooltip;
-    // Outlined square: colored border when lit, gray when unlit.
-    const borderColor = p.available ? p.bgColor : "#d1d5db";
+
+    const borderColor = p.available ? p.bgColor : UNLIT_GRAY;
+    const iconHtml = p.available
+      ? `<img src="${p.icon}" alt="${p.label}" class="w-6 h-6" />`
+      : `<div class="w-6 h-6" style="
+            background-color: ${UNLIT_GRAY};
+            -webkit-mask: url('${p.icon}') center/contain no-repeat;
+            mask: url('${p.icon}') center/contain no-repeat;
+          " aria-label="${p.label}"></div>`;
+
     wrap.innerHTML = `
-      <div class="w-10 h-10 rounded flex items-center justify-center" style="border: 2px solid ${borderColor}">
-        <img src="${p.icon}" alt="${p.label}" class="w-6 h-6 ${p.available ? "" : "grayscale opacity-60"}" />
+      <div class="w-10 h-10 rounded flex items-center justify-center border-2" style="border-color: ${borderColor}">
+        ${iconHtml}
       </div>
       <span class="text-[10px] ${p.available ? "text-gray-700" : "text-gray-400"}">${p.label}</span>
     `;

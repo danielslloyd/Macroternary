@@ -162,31 +162,39 @@ def create_app() -> FastAPI:
 
         base_url = (os.getenv("OLLAMA_HOST") or "http://127.0.0.1:11434").rstrip("/")
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.get(f"{base_url}/api/tags")
-            resp.raise_for_status()
-            data = resp.json()
-            models = []
-            for m in data.get("models", []):
-                name = m.get("name")
-                if not name:
-                    continue
-                # Fetch model details to check if it supports vision.
-                try:
-                    detail_resp = await client.get(
-                        f"{base_url}/api/show",
-                        params={"name": name},
-                        timeout=5.0,
-                    )
-                    detail_resp.raise_for_status()
-                    detail = detail_resp.json()
-                    supports_vision = detail.get("details", {}).get("families", [])
-                    has_vision = any("multimodal" in f.lower() or "vision" in f.lower() for f in supports_vision)
-                except Exception as e:
-                    logger.debug(f"Could not fetch details for {name}: {e}")
+                resp.raise_for_status()
+                data = resp.json()
+                models = []
+                for m in data.get("models", []):
+                    name = m.get("name")
+                    if not name:
+                        continue
                     has_vision = False
-                models.append({"name": name, "vision": has_vision})
-            logger.info(f"Ollama /api/tags returned {len(models)} models from {base_url}")
+                    # Ollama's /api/show is POST with {"model": <name>}; newer
+                    # versions return a "capabilities" array we can check.
+                    try:
+                        detail_resp = await client.post(
+                            f"{base_url}/api/show",
+                            json={"model": name},
+                        )
+                        detail_resp.raise_for_status()
+                        detail = detail_resp.json()
+                        caps = detail.get("capabilities") or []
+                        if any(c.lower() == "vision" for c in caps):
+                            has_vision = True
+                        else:
+                            # Fallback for older Ollama: families often include
+                            # "clip" / "siglip" / "mllama" for vision-capable models.
+                            families = detail.get("details", {}).get("families") or []
+                            vision_markers = ("clip", "siglip", "vision", "mllama", "multimodal")
+                            if any(any(mk in (f or "").lower() for mk in vision_markers) for f in families):
+                                has_vision = True
+                    except Exception as e:
+                        logger.debug(f"Could not fetch /api/show for {name}: {e}")
+                    models.append({"name": name, "vision": has_vision})
+            logger.info(f"Ollama /api/tags returned {len(models)} model(s) from {base_url}")
             return JSONResponse({"models": models})
         except Exception as e:
             logger.warning(f"Ollama tags unavailable at {base_url}: {e}")

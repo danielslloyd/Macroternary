@@ -3,6 +3,15 @@ setlocal enabledelayedexpansion
 
 cd /d "%~dp0"
 
+REM Kill any existing server instances on port 8000
+echo Checking for existing server processes...
+tasklist | findstr /I "python" >nul
+if not errorlevel 1 (
+    echo Terminating any existing server instances...
+    taskkill /F /IM python.exe /FI "WINDOWTITLE eq *Macro Ternary*" >nul 2>&1
+    timeout /t 1 /nobreak >nul
+)
+
 echo.
 echo ========================================
 echo   Macro Ternary Server

@@ -214,7 +214,7 @@ export async function openAIModal({ onAdd }) {
   await Promise.all([loadApiKeys(), loadOllamaModels()]);
   const providers = getModelsByProvider();
 
-  // Icon row with colored backgrounds.
+  // Icon row with outlined squares.
   providers.forEach((p) => {
     const wrap = document.createElement("div");
     wrap.className = "flex flex-col items-center gap-1";
@@ -230,10 +230,10 @@ export async function openAIModal({ onAdd }) {
         : `${p.label} — no key`;
     }
     wrap.title = tooltip;
-    // Colored square for lit, gray for unlit.
-    const bgColor = p.available ? p.bgColor : "#d1d5db";
+    // Outlined square: colored border when lit, gray when unlit.
+    const borderColor = p.available ? p.bgColor : "#d1d5db";
     wrap.innerHTML = `
-      <div class="w-10 h-10 rounded flex items-center justify-center" style="background-color: ${bgColor}">
+      <div class="w-10 h-10 rounded flex items-center justify-center" style="border: 2px solid ${borderColor}">
         <img src="${p.icon}" alt="${p.label}" class="w-6 h-6 ${p.available ? "" : "grayscale opacity-60"}" />
       </div>
       <span class="text-[10px] ${p.available ? "text-gray-700" : "text-gray-400"}">${p.label}</span>

@@ -260,8 +260,8 @@ export async function openAIModal({ onAdd }) {
     p.models.forEach((m) => {
       const opt = document.createElement("option");
       opt.value = `${p.provider}:${m.name}`;
-      opt.dataset.capabilities = p.capabilities.join(",");
-      const caps = p.capabilities.includes("image") ? "text+img" : "text";
+      opt.dataset.capabilities = m.capabilities.join(",");
+      const caps = m.capabilities.includes("image") ? "text+img" : "text";
       opt.textContent = `${p.label} – ${m.name} (${caps})`;
       modelSelectEl.appendChild(opt);
       added += 1;

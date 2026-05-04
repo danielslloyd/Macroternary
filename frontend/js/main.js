@@ -133,6 +133,21 @@ async function start() {
     state.families = snapshot.families;
     state.filters.retailers = new Set(snapshot.meta.retailers);
     render();
+
+    // Fetch and display backend version
+    try {
+      const versionRes = await fetch("/api/version", { cache: "no-cache" });
+      if (versionRes.ok) {
+        const versionData = await versionRes.json();
+        const footerEl = document.getElementById("footer-text");
+        if (footerEl) {
+          const currentText = footerEl.textContent;
+          footerEl.textContent = `Backend v${versionData.version} · ${currentText}`;
+        }
+      }
+    } catch (e) {
+      console.debug("Could not fetch backend version:", e.message);
+    }
   } catch (e) {
     showBanner(e.message);
     console.error(e);

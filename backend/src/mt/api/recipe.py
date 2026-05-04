@@ -339,7 +339,26 @@ class OllamaEstimator:
         return EstimatedRecipe.model_validate(json.loads(content))
 
     async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
-        raise NotImplementedError("Ollama image extraction not yet implemented")
+        import base64
+
+        b64_image = base64.b64encode(image_data).decode()
+        body = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": LABEL_PROMPT},
+                {
+                    "role": "user",
+                    "content": "Extract the macros from this nutrition label. Respond with strict JSON.",
+                    "images": [b64_image],
+                },
+            ],
+            "format": "json",
+            "stream": False,
+            "options": {"temperature": 0.1},
+        }
+        data = await self._post_chat(body)
+        content = data["message"]["content"]
+        return EstimatedRecipe.model_validate(json.loads(content))
 
 
 class GrokEstimator:

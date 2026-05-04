@@ -55,6 +55,7 @@ export async function loadOllamaModels() {
     const res = await fetch("/api/ollama/tags");
     if (res.ok) {
       const data = await res.json();
+      // data.models is now [{name, vision}, ...]
       ollamaModels = Array.isArray(data.models) ? data.models : [];
     } else {
       ollamaModels = [];
@@ -86,11 +87,19 @@ export function getModelsByProvider() {
     icon: config.icon,
     capabilities: config.capabilities,
     available: isAvailable(provider),
-    models: config.models.map((model) => ({
-      name: model,
-      provider,
-      capabilities: config.capabilities,
-    })),
+    models: config.models.map((m) => {
+      // m can be a string (openai, anthropic, etc.) or an object (ollama: {name, vision})
+      const name = typeof m === "string" ? m : m.name;
+      const capabilities =
+        provider === "ollama" && typeof m === "object" && m.vision
+          ? ["text", "image"]
+          : config.capabilities;
+      return {
+        name,
+        provider,
+        capabilities,
+      };
+    }),
   }));
 }
 

@@ -7,10 +7,13 @@ to iterate on.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from mt.config import settings
 from mt.extractors.base import ExtractedLabel
+
+logger = logging.getLogger(__name__)
 
 PROMPT = """You are reading a US Nutrition Facts label from a single product photo.
 Return STRICT JSON with these keys (use null for unknowns, no prose):
@@ -60,8 +63,25 @@ class QwenOllamaExtractor:
                     "images": [str(image_path)],
                 }
             ],
+            options={"num_gpu": -1},  # Use all available GPU layers
         )
+        self._check_gpu_usage(resp)
         text = resp["message"]["content"]
         data = json.loads(text)
         data["raw"] = {"model": self.model, "response": text}
         return ExtractedLabel.model_validate(data)
+
+    def _check_gpu_usage(self, response: dict) -> None:
+        """Warn if model appears to be running on CPU instead of GPU."""
+        load_ns = response.get("load_duration", 0)
+        eval_ns = response.get("eval_duration", 0)
+        if not eval_ns:
+            return
+        eval_ms = eval_ns / 1_000_000
+        eval_count = response.get("eval_count", 1)
+        ms_per_token = eval_ms / max(eval_count, 1)
+        if ms_per_token > 20:  # >20ms per token = likely CPU
+            logger.warning(
+                f"Ollama {self.model} appears to be running on CPU "
+                f"({ms_per_token:.1f}ms/token). Enable GPU in Ollama for faster inference."
+            )

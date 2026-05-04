@@ -69,6 +69,10 @@ export async function loadOllamaModels() {
     console.warn("Could not load Ollama tags:", err.message);
     ollamaModels = [];
   }
+  // Always include a default model option for Ollama
+  if (ollamaModels.length === 0) {
+    ollamaModels = ["mistral"];
+  }
   PROVIDER_CONFIGS.ollama.models = ollamaModels;
 }
 
@@ -82,6 +86,10 @@ function isAvailable(provider) {
   // Ollama is local — always "lit" regardless of whether models are pulled
   // or the daemon is up. The model dropdown will simply be empty if not.
   if (cfg.alwaysAvailable) return true;
+  if (cfg.alwaysAvailable) {
+    // Ollama is always available (no API key required)
+    return true;
+  }
   return hasKey(provider);
 }
 

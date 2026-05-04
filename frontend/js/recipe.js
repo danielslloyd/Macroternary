@@ -364,8 +364,10 @@ export async function openAIModal({ onAdd }) {
         statusEl.textContent = "Select an image first.";
         return;
       }
-      if (!selectedSupportsImage()) {
-        statusEl.textContent = "Selected model can't read images.";
+      const forceVision = e.target.dataset.forceVision === "true";
+      if (!selectedSupportsImage() && !forceVision) {
+        statusEl.innerHTML = `Selected model can't read images.
+          <button data-action="extract-image" data-force-vision="true" class="underline text-sm">Try anyway?</button>`;
         return;
       }
       statusEl.textContent = "Extracting…";

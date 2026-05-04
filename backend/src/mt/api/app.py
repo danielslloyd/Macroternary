@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from mt.api import recipe as recipe_mod
+from mt import __version__
 from mt.db.models import ExtractionAttempt, FoodFamily, Product, Source
 from mt.db.session import SessionLocal
 from mt.validators import ProductCandidate, validate_product
@@ -76,6 +77,10 @@ def create_app() -> FastAPI:
     @app.get("/admin/api/health")
     def health() -> dict:
         return {"ok": True}
+
+    @app.get("/api/version")
+    def version() -> dict:
+        return {"version": __version__}
 
     @app.get("/admin/api/families")
     def families(db: Session = Depends(get_db)) -> list[dict]:

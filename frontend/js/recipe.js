@@ -318,7 +318,7 @@ export async function openAIModal({ onAdd }) {
       statusEl.textContent = "No model selected.";
       return;
     }
-    const [provider, model] = modelValue.split(":");
+    const [provider, model] = modelValue.split(":", 2);
 
     if (action === "estimate-text") {
       const text = textEl.value.trim();

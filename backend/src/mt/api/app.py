@@ -161,19 +161,28 @@ def create_app() -> FastAPI:
         import httpx
 
         base_url = (os.getenv("OLLAMA_HOST") or "http://127.0.0.1:11434").rstrip("/")
+        logger.info(f"Fetching Ollama models from {base_url}")
+
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.get(f"{base_url}/api/tags")
-                resp.raise_for_status()
+                try:
+                    resp = await client.get(f"{base_url}/api/tags")
+                    resp.raise_for_status()
+                except Exception as e:
+                    logger.error(f"Failed GET {base_url}/api/tags: {e}")
+                    return JSONResponse({"models": [], "error": "ollama_unavailable", "detail": str(e)})
+
                 data = resp.json()
+                raw_models = data.get("models", [])
+                logger.info(f"Ollama returned {len(raw_models)} model(s)")
+
                 models = []
-                for m in data.get("models", []):
+                for m in raw_models:
                     name = m.get("name")
                     if not name:
                         continue
+                    logger.debug(f"Processing model: {name}")
                     has_vision = False
-                    # Ollama's /api/show is POST with {"model": <name>}; newer
-                    # versions return a "capabilities" array we can check.
                     try:
                         detail_resp = await client.post(
                             f"{base_url}/api/show",
@@ -182,22 +191,24 @@ def create_app() -> FastAPI:
                         detail_resp.raise_for_status()
                         detail = detail_resp.json()
                         caps = detail.get("capabilities") or []
+                        logger.debug(f"  {name} capabilities: {caps}")
                         if any(c.lower() == "vision" for c in caps):
                             has_vision = True
                         else:
-                            # Fallback for older Ollama: families often include
-                            # "clip" / "siglip" / "mllama" for vision-capable models.
                             families = detail.get("details", {}).get("families") or []
                             vision_markers = ("clip", "siglip", "vision", "mllama", "multimodal")
                             if any(any(mk in (f or "").lower() for mk in vision_markers) for f in families):
+                                logger.debug(f"  {name} has vision via families: {families}")
                                 has_vision = True
                     except Exception as e:
-                        logger.debug(f"Could not fetch /api/show for {name}: {e}")
+                        logger.warning(f"Could not fetch /api/show for {name}: {e}")
                     models.append({"name": name, "vision": has_vision})
-            logger.info(f"Ollama /api/tags returned {len(models)} model(s) from {base_url}")
-            return JSONResponse({"models": models})
+                    logger.info(f"  {name}: vision={has_vision}")
+
+                logger.info(f"Returning {len(models)} model(s)")
+                return JSONResponse({"models": models})
         except Exception as e:
-            logger.warning(f"Ollama tags unavailable at {base_url}: {e}")
+            logger.error(f"Ollama tags endpoint failed: {e}", exc_info=True)
             return JSONResponse({"models": [], "error": "ollama_unavailable", "detail": str(e)})
 
     @app.post("/api/recipe/extract-label")

@@ -27,6 +27,14 @@ from mt.validators import ProductCandidate, validate_product
 
 logger = logging.getLogger(__name__)
 
+# Make app loggers visible under uvicorn (which doesn't auto-attach a handler
+# to non-uvicorn loggers).
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
 # Repo root: backend/src/mt/api/app.py → up four = backend/, up five = repo root.
 REPO_ROOT = Path(__file__).resolve().parents[4]
 FRONTEND_DIR = REPO_ROOT / "frontend"

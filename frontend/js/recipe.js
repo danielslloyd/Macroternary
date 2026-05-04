@@ -282,11 +282,16 @@ export async function openAIModal({ onAdd }) {
   }
 
   function refreshExtractBtn() {
-    extractBtn.disabled = !selectedSupportsImage();
+    // Never disable — user may want to override and try anyway. Just hint
+    // visually and via title when the selected model isn't flagged as vision.
+    extractBtn.disabled = false;
     if (!selectedSupportsImage()) {
-      extractBtn.title = "Selected model can't read images. Pick a vision model.";
+      extractBtn.title =
+        "Model isn't flagged as vision-capable; will try anyway.";
+      extractBtn.classList.add("opacity-70");
     } else {
       extractBtn.title = "";
+      extractBtn.classList.remove("opacity-70");
     }
   }
   modelSelectEl.addEventListener("change", refreshExtractBtn);
@@ -364,13 +369,9 @@ export async function openAIModal({ onAdd }) {
         statusEl.textContent = "Select an image first.";
         return;
       }
-      const forceVision = e.target.dataset.forceVision === "true";
-      if (!selectedSupportsImage() && !forceVision) {
-        statusEl.innerHTML = `Selected model can't read images.
-          <button data-action="extract-image" data-force-vision="true" class="underline text-sm">Try anyway?</button>`;
-        return;
-      }
-      statusEl.textContent = "Extracting…";
+      statusEl.textContent = selectedSupportsImage()
+        ? "Extracting…"
+        : "Extracting (model not flagged as vision-capable; trying anyway)…";
       const formData = new FormData();
       formData.append("file", file);
       formData.append("provider", provider);

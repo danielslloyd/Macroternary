@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     ollama_host: str = "http://127.0.0.1:11434"
     vlm_model: str = "qwen2.5vl:7b"
+    ollama_show_thinking: bool = False  # Log model's thinking/reasoning steps
 
 
 settings = Settings()

@@ -18,6 +18,8 @@ from typing import Literal, Protocol
 import httpx
 from pydantic import BaseModel, Field
 
+from mt.config import settings
+
 logger = logging.getLogger(__name__)
 
 # ─── interface ────────────────────────────────────────────────────────────
@@ -350,7 +352,13 @@ class OllamaEstimator:
 
         resp.raise_for_status()
         data = resp.json()
-        logger.info(f"Ollama raw response: {json.dumps(data, indent=2)}")
+        # Hide thinking field unless explicitly enabled (can be verbose)
+        log_data = data.copy()
+        if not settings.ollama_show_thinking:
+            if "message" in log_data and isinstance(log_data["message"], dict):
+                log_data["message"] = log_data["message"].copy()
+                log_data["message"].pop("thinking", None)
+        logger.info(f"Ollama raw response: {json.dumps(log_data, indent=2)}")
         return data
 
     def _check_gpu_usage(self, response: dict) -> None:

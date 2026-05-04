@@ -221,6 +221,39 @@ class GoogleEstimator:
         self.model = model
         self.name = f"google_{model}"
 
+    def _url(self) -> str:
+        return f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+
+    def _headers(self) -> dict:
+        # Use the header form so the key isn't echoed in logs / error URLs.
+        return {"x-goog-api-key": self.api_key, "content-type": "application/json"}
+
+    async def _post(self, body: dict) -> dict:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(self._url(), headers=self._headers(), json=body)
+        if resp.status_code >= 400:
+            # Surface Google's actual error message instead of just the URL.
+            detail = ""
+            try:
+                err = resp.json().get("error", {})
+                detail = err.get("message") or err.get("status") or str(err)
+            except Exception:
+                detail = resp.text.strip()[:300]
+            hint = ""
+            if resp.status_code == 403:
+                hint = (
+                    " — common causes: the key isn't a Generative Language API key, "
+                    "the API isn't enabled in the key's Google Cloud project, "
+                    "or the key has HTTP-referrer restrictions (server calls won't have a referrer). "
+                    "Generate a fresh key at https://aistudio.google.com/apikey."
+                )
+            elif resp.status_code == 400:
+                hint = " — request rejected (model name or payload)."
+            elif resp.status_code == 429:
+                hint = " — rate or quota limit hit."
+            raise RuntimeError(f"Google API {resp.status_code}: {detail}{hint}")
+        return resp.json()
+
     async def estimate(self, text: str) -> EstimatedRecipe:
         body = {
             "contents": [
@@ -232,8 +265,10 @@ class GoogleEstimator:
                     ],
                 }
             ],
-            "generationConfig": {"temperature": 0.1},
+            "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"},
         }
+        data = await self._post(body)
+        content = data["candidates"][0]["content"]["parts"][0]["text"]
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}",
@@ -263,8 +298,10 @@ class GoogleEstimator:
                     ],
                 }
             ],
-            "generationConfig": {"temperature": 0.1},
+            "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"},
         }
+        data = await self._post(body)
+        content = data["candidates"][0]["content"]["parts"][0]["text"]
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}",
@@ -326,7 +363,26 @@ class OllamaEstimator:
         return EstimatedRecipe.model_validate(json.loads(content))
 
     async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
-        raise NotImplementedError("Ollama image extraction not yet implemented")
+        import base64
+
+        b64_image = base64.b64encode(image_data).decode()
+        body = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": LABEL_PROMPT},
+                {
+                    "role": "user",
+                    "content": "Extract the macros from this nutrition label. Respond with strict JSON.",
+                    "images": [b64_image],
+                },
+            ],
+            "format": "json",
+            "stream": False,
+            "options": {"temperature": 0.1},
+        }
+        data = await self._post_chat(body)
+        content = data["message"]["content"]
+        return EstimatedRecipe.model_validate(json.loads(content))
 
 
 class GrokEstimator:

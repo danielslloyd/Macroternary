@@ -156,22 +156,41 @@ def create_app() -> FastAPI:
 
     @app.get("/api/ollama/tags")
     async def ollama_tags() -> JSONResponse:
-        """Return models pulled in the local Ollama instance, or an empty list."""
+        """Return models pulled in the local Ollama instance with their capabilities."""
+        import os
         import httpx
 
-        base_url = (
-            __import__("os").getenv("OLLAMA_HOST") or "http://127.0.0.1:11434"
-        ).rstrip("/")
+        base_url = (os.getenv("OLLAMA_HOST") or "http://127.0.0.1:11434").rstrip("/")
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(f"{base_url}/api/tags")
             resp.raise_for_status()
             data = resp.json()
-            models = [m.get("name") for m in data.get("models", []) if m.get("name")]
+            models = []
+            for m in data.get("models", []):
+                name = m.get("name")
+                if not name:
+                    continue
+                # Fetch model details to check if it supports vision.
+                try:
+                    detail_resp = await client.get(
+                        f"{base_url}/api/show",
+                        params={"name": name},
+                        timeout=5.0,
+                    )
+                    detail_resp.raise_for_status()
+                    detail = detail_resp.json()
+                    supports_vision = detail.get("details", {}).get("families", [])
+                    has_vision = any("multimodal" in f.lower() or "vision" in f.lower() for f in supports_vision)
+                except Exception as e:
+                    logger.debug(f"Could not fetch details for {name}: {e}")
+                    has_vision = False
+                models.append({"name": name, "vision": has_vision})
+            logger.info(f"Ollama /api/tags returned {len(models)} models from {base_url}")
             return JSONResponse({"models": models})
         except Exception as e:
-            logger.info(f"Ollama tags unavailable: {e}")
-            return JSONResponse({"models": [], "error": "ollama_unavailable"})
+            logger.warning(f"Ollama tags unavailable at {base_url}: {e}")
+            return JSONResponse({"models": [], "error": "ollama_unavailable", "detail": str(e)})
 
     @app.post("/api/recipe/extract-label")
     async def extract_label(request: Request, file: UploadFile, provider: str | None = Form(None), model: str | None = Form(None)) -> JSONResponse:

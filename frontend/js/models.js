@@ -7,24 +7,28 @@ const PROVIDER_CONFIGS = {
     icon: "/icons/anthropic.svg",
     models: ["claude-3-5-sonnet-20241022", "claude-3-opus-20250219", "claude-3-haiku-20240307"],
     capabilities: ["text", "image"],
+    bgColor: "#d97706",
   },
   openai: {
     label: "OpenAI",
     icon: "/icons/openai.svg",
     models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
     capabilities: ["text", "image"],
+    bgColor: "#059669",
   },
   grok: {
     label: "Grok",
     icon: "/icons/grok.svg",
     models: ["grok-3"],
     capabilities: ["text"],
+    bgColor: "#8b5cf6",
   },
   google: {
     label: "Google",
     icon: "/icons/google.svg",
     models: ["gemini-2.0-flash", "gemini-1.5-pro"],
     capabilities: ["text", "image"],
+    bgColor: "#0891b2",
   },
   ollama: {
     label: "Ollama",
@@ -33,6 +37,7 @@ const PROVIDER_CONFIGS = {
     capabilities: ["text"],
     alwaysAvailable: true,
     dynamic: true,
+    bgColor: "#000000",
   },
 };
 
@@ -55,6 +60,7 @@ export async function loadOllamaModels() {
     const res = await fetch("/api/ollama/tags");
     if (res.ok) {
       const data = await res.json();
+      // data.models is now [{name, vision}, ...]
       ollamaModels = Array.isArray(data.models) ? data.models : [];
     } else {
       ollamaModels = [];
@@ -77,6 +83,9 @@ function hasKey(provider) {
 function isAvailable(provider) {
   const cfg = PROVIDER_CONFIGS[provider];
   if (!cfg) return false;
+  // Ollama is local — always "lit" regardless of whether models are pulled
+  // or the daemon is up. The model dropdown will simply be empty if not.
+  if (cfg.alwaysAvailable) return true;
   if (cfg.alwaysAvailable) {
     // Ollama is always available (no API key required)
     return true;
@@ -91,11 +100,19 @@ export function getModelsByProvider() {
     icon: config.icon,
     capabilities: config.capabilities,
     available: isAvailable(provider),
-    models: config.models.map((model) => ({
-      name: model,
-      provider,
-      capabilities: config.capabilities,
-    })),
+    models: config.models.map((m) => {
+      // m can be a string (openai, anthropic, etc.) or an object (ollama: {name, vision})
+      const name = typeof m === "string" ? m : m.name;
+      const capabilities =
+        provider === "ollama" && typeof m === "object" && m.vision
+          ? ["text", "image"]
+          : config.capabilities;
+      return {
+        name,
+        provider,
+        capabilities,
+      };
+    }),
   }));
 }
 

@@ -3,10 +3,14 @@ setlocal enabledelayedexpansion
 
 cd /d "%~dp0"
 
-REM Kill any existing server instances on port 8000
-echo Checking for existing server processes...
-taskkill /F /IM python.exe >nul 2>&1
-timeout /t 1 /nobreak >nul
+REM Kill any existing Macro Ternary server instances
+echo Checking for existing Macro Ternary processes...
+if exist ".mt-server.pid" (
+    set /p OLD_PID=<.mt-server.pid
+    taskkill /PID !OLD_PID! /F >nul 2>&1
+    timeout /t 1 /nobreak >nul
+    del .mt-server.pid >nul 2>&1
+)
 
 echo.
 echo ========================================

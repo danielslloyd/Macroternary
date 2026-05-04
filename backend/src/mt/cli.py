@@ -83,14 +83,29 @@ def snapshot(version: int, out: Path | None) -> None:
 @click.option("--port", default=None, type=int)
 def serve(host: str | None, port: int | None) -> None:
     """Start the local admin FastAPI."""
+    import os
     import uvicorn
 
-    uvicorn.run(
-        "mt.api.app:app",
-        host=host or settings.admin_host,
-        port=port or settings.admin_port,
-        reload=False,
-    )
+    # Save PID for cleanup by batch script
+    pid_file = Path.cwd().parent / ".mt-server.pid"
+    try:
+        pid_file.write_text(str(os.getpid()))
+    except Exception:
+        pass  # Non-critical if PID file can't be written
+
+    try:
+        uvicorn.run(
+            "mt.api.app:app",
+            host=host or settings.admin_host,
+            port=port or settings.admin_port,
+            reload=False,
+        )
+    finally:
+        # Clean up PID file on shutdown
+        try:
+            pid_file.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 @main.command("seed-demo")

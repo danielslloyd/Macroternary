@@ -324,6 +324,10 @@ class OllamaEstimator:
         self.name = f"ollama_{model}"
 
     async def _post_chat(self, body: dict) -> dict:
+        logger.info(f"Ollama request to {self.base_url}/api/chat")
+        logger.info(f"  Model: {body.get('model')}")
+        logger.info(f"  Messages: {json.dumps(body.get('messages', []), indent=2)}")
+        logger.info(f"  Format: {body.get('format')}, Options: {body.get('options')}")
         try:
             async with httpx.AsyncClient(timeout=300.0) as client:
                 resp = await client.post(f"{self.base_url}/api/chat", json=body)
@@ -345,7 +349,9 @@ class OllamaEstimator:
             )
 
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        logger.info(f"Ollama raw response: {json.dumps(data, indent=2)}")
+        return data
 
     def _check_gpu_usage(self, response: dict) -> None:
         """Warn if model appears to be running on CPU instead of GPU."""
@@ -380,13 +386,26 @@ class OllamaEstimator:
         }
         data = await self._post_chat(body)
         content = data["message"]["content"]
+        logger.info(f"Extracted content: {content}")
         self._check_gpu_usage(data)
-        return EstimatedRecipe.model_validate(json.loads(content))
+        try:
+            parsed = json.loads(content)
+            logger.info(f"Parsed JSON: {json.dumps(parsed, indent=2)}")
+            result = EstimatedRecipe.model_validate(parsed)
+            logger.info(f"Validation successful: {result.model_dump()}")
+            return result
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {e}\nContent: {content}")
+            raise
+        except Exception as e:
+            logger.error(f"Validation error: {e}\nParsed: {parsed}")
+            raise
 
     async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
         import base64
 
         b64_image = base64.b64encode(image_data).decode()
+        logger.info(f"Image data: {len(image_data)} bytes, base64 length: {len(b64_image)}")
         body = {
             "model": self.model,
             "messages": [
@@ -403,8 +422,20 @@ class OllamaEstimator:
         }
         data = await self._post_chat(body)
         content = data["message"]["content"]
+        logger.info(f"Extracted content: {content}")
         self._check_gpu_usage(data)
-        return EstimatedRecipe.model_validate(json.loads(content))
+        try:
+            parsed = json.loads(content)
+            logger.info(f"Parsed JSON: {json.dumps(parsed, indent=2)}")
+            result = EstimatedRecipe.model_validate(parsed)
+            logger.info(f"Validation successful: {result.model_dump()}")
+            return result
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {e}\nContent: {content}")
+            raise
+        except Exception as e:
+            logger.error(f"Validation error: {e}\nParsed: {parsed}")
+            raise
 
 
 class GrokEstimator:

@@ -325,7 +325,7 @@ class OllamaEstimator:
 
     async def _post_chat(self, body: dict) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=300.0) as client:
                 resp = await client.post(f"{self.base_url}/api/chat", json=body)
         except httpx.ConnectError as e:
             raise RuntimeError(

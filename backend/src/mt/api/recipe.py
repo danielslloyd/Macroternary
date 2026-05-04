@@ -427,6 +427,16 @@ class OllamaEstimator:
         try:
             parsed = json.loads(content)
             logger.info(f"Parsed JSON: {json.dumps(parsed, indent=2)}")
+            # Label responses have kcal/p/c/f at the top level; remap into totals
+            if "error" not in parsed and any(k in parsed for k in ("kcal", "p", "c", "f")):
+                remapped = {
+                    "items": [],
+                    "totals": {k: parsed[k] for k in ("kcal", "p", "c", "f") if k in parsed},
+                    "assumptions": parsed.get("assumptions", []),
+                    "confidence": parsed.get("confidence", "medium"),
+                }
+                logger.info(f"Remapped to EstimatedRecipe format: {json.dumps(remapped, indent=2)}")
+                parsed = remapped
             result = EstimatedRecipe.model_validate(parsed)
             logger.info(f"Validation successful: {result.model_dump()}")
             return result

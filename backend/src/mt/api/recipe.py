@@ -347,6 +347,26 @@ class OllamaEstimator:
         resp.raise_for_status()
         return resp.json()
 
+    def _check_gpu_usage(self, response: dict) -> None:
+        """Warn if model appears to be running on CPU instead of GPU."""
+        # Check timing metrics: load_duration is nanoseconds, eval_duration is nanoseconds
+        load_ns = response.get("load_duration", 0)
+        eval_ns = response.get("eval_duration", 0)
+        if not eval_ns:
+            return
+        eval_ms = eval_ns / 1_000_000
+        load_ms = load_ns / 1_000_000
+
+        # Heuristic: if eval takes >2s per 100 tokens, likely CPU-bound
+        # (adjust based on your hardware; GPUs typically do 100s of tokens/sec)
+        eval_count = response.get("eval_count", 1)
+        ms_per_token = eval_ms / max(eval_count, 1)
+        if ms_per_token > 20:  # >20ms per token = likely CPU
+            logger.warning(
+                f"Ollama {self.model} appears to be running on CPU "
+                f"({ms_per_token:.1f}ms/token). Enable GPU in Ollama for faster inference."
+            )
+
     async def estimate(self, text: str) -> EstimatedRecipe:
         body = {
             "model": self.model,
@@ -356,10 +376,11 @@ class OllamaEstimator:
             ],
             "format": "json",
             "stream": False,
-            "options": {"temperature": 0.1},
+            "options": {"temperature": 0.1, "num_gpu": -1},
         }
         data = await self._post_chat(body)
         content = data["message"]["content"]
+        self._check_gpu_usage(data)
         return EstimatedRecipe.model_validate(json.loads(content))
 
     async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
@@ -378,10 +399,11 @@ class OllamaEstimator:
             ],
             "format": "json",
             "stream": False,
-            "options": {"temperature": 0.1},
+            "options": {"temperature": 0.1, "num_gpu": -1},
         }
         data = await self._post_chat(body)
         content = data["message"]["content"]
+        self._check_gpu_usage(data)
         return EstimatedRecipe.model_validate(json.loads(content))
 
 

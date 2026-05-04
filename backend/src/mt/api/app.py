@@ -266,8 +266,9 @@ def create_app() -> FastAPI:
             problem = recipe_mod.sanity_check(result)
             if problem:
                 logger.warning(f"Sanity check failed for label extraction: {problem}")
+                logger.warning(f"  Extracted data: {result.model_dump()}")
                 return JSONResponse(
-                    {"error": "sanity_check_failed", "message": problem}, status_code=422
+                    {"error": "sanity_check_failed", "message": problem, "data": result.model_dump()}, status_code=422
                 )
             logger.info("Label extraction complete")
             return JSONResponse(result.model_dump())
@@ -336,8 +337,9 @@ def create_app() -> FastAPI:
         problem = recipe_mod.sanity_check(result)
         if problem:
             logger.warning(f"Sanity check failed: {problem}")
+            logger.warning(f"  Extracted data: {result.model_dump()}")
             return JSONResponse(
-                {"error": "sanity_check_failed", "message": problem}, status_code=422
+                {"error": "sanity_check_failed", "message": problem, "data": result.model_dump()}, status_code=422
             )
         logger.info("Recipe estimation complete")
         return JSONResponse(result.model_dump())

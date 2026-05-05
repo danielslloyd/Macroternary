@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     family_seed_path: Path = Path("./seeds/food_families.json")
     snapshot_out_dir: Path = Path("../frontend/data")
     admin_host: str = "127.0.0.1"
-    admin_port: int = 8000
+    admin_port: int = 8001
 
     ollama_host: str = "http://127.0.0.1:11434"
     vlm_model: str = "qwen2.5vl:7b"

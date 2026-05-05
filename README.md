@@ -35,14 +35,14 @@ uv run mt seed-demo                  # ~10 demo products, manual source
 uv run mt snapshot --version 1       # writes ../frontend/data/{meta,products.v1,families.v1}.json
 
 # 4. start the local server
-uv run mt serve                      # http://127.0.0.1:8000
+uv run mt serve                      # http://127.0.0.1:8001
 ```
 
-Open `http://127.0.0.1:8000` and you should see the ternary plot.
+Open `http://127.0.0.1:8001` and you should see the ternary plot.
 
 > Want to skip the backend entirely? A demo snapshot is checked into
 > `frontend/data/`. From the `frontend/` directory run
-> `python -m http.server 8000` and open `http://127.0.0.1:8000` — the
+> `python -m http.server 8001` and open `http://127.0.0.1:8001` — the
 > ternary works; only the AI recipe estimator is unavailable.
 
 ## Daily workflow

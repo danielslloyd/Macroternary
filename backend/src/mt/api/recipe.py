@@ -20,6 +20,17 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+
+def _strip_fences(text: str) -> str:
+    """Strip markdown code fences that LLMs sometimes wrap JSON in."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text[text.index("\n") + 1:] if "\n" in text else text[3:]
+    if text.endswith("```"):
+        text = text[: text.rindex("```")]
+    return text.strip()
+
+
 # ─── interface ────────────────────────────────────────────────────────────
 
 
@@ -154,7 +165,7 @@ class OpenAIEstimator:
             )
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
-        return EstimatedRecipe.model_validate(json.loads(content))
+        return EstimatedRecipe.model_validate(json.loads(_strip_fences(content)))
 
     async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
         import base64
@@ -182,7 +193,7 @@ class OpenAIEstimator:
             )
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
-        return _label_to_recipe(LabelExtraction.model_validate(json.loads(content)))
+        return _label_to_recipe(LabelExtraction.model_validate(json.loads(_strip_fences(content))))
 
 
 class AnthropicEstimator:
@@ -211,7 +222,7 @@ class AnthropicEstimator:
             )
         resp.raise_for_status()
         content = resp.json()["content"][0]["text"]
-        return EstimatedRecipe.model_validate(json.loads(content))
+        return EstimatedRecipe.model_validate(json.loads(_strip_fences(content)))
 
     async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
         import base64
@@ -242,7 +253,7 @@ class AnthropicEstimator:
             )
         resp.raise_for_status()
         content = resp.json()["content"][0]["text"]
-        return _label_to_recipe(LabelExtraction.model_validate(json.loads(content)))
+        return _label_to_recipe(LabelExtraction.model_validate(json.loads(_strip_fences(content))))
 
 
 class GoogleEstimator:
@@ -311,7 +322,7 @@ class GoogleEstimator:
             )
         resp.raise_for_status()
         content = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return EstimatedRecipe.model_validate(json.loads(content))
+        return EstimatedRecipe.model_validate(json.loads(_strip_fences(content)))
 
     async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
         import base64
@@ -344,7 +355,7 @@ class GoogleEstimator:
             )
         resp.raise_for_status()
         content = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return _label_to_recipe(LabelExtraction.model_validate(json.loads(content)))
+        return _label_to_recipe(LabelExtraction.model_validate(json.loads(_strip_fences(content))))
 
 
 class OllamaEstimator:
@@ -419,7 +430,7 @@ class OllamaEstimator:
         logger.info(f"Extracted content: {content}")
         self._check_gpu_usage(data)
         try:
-            parsed = json.loads(content)
+            parsed = json.loads(_strip_fences(content))
             logger.info(f"Parsed JSON: {json.dumps(parsed, indent=2)}")
             result = EstimatedRecipe.model_validate(parsed)
             logger.info(f"Validation successful: {result.model_dump()}")
@@ -454,7 +465,7 @@ class OllamaEstimator:
         content = data["message"]["content"]
         logger.info(f"Extracted content: {content}")
         self._check_gpu_usage(data)
-        return _label_to_recipe(LabelExtraction.model_validate(json.loads(content)))
+        return _label_to_recipe(LabelExtraction.model_validate(json.loads(_strip_fences(content))))
 
 
 class GrokEstimator:
@@ -480,7 +491,7 @@ class GrokEstimator:
             )
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
-        return EstimatedRecipe.model_validate(json.loads(content))
+        return EstimatedRecipe.model_validate(json.loads(_strip_fences(content)))
 
     async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
         raise NotImplementedError("Grok image extraction not yet implemented")
@@ -513,7 +524,7 @@ class NIMEstimator:
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
         logger.info(f"NIM raw estimate response: {content!r}")
-        return EstimatedRecipe.model_validate(json.loads(content))
+        return EstimatedRecipe.model_validate(json.loads(_strip_fences(content)))
 
     async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
         import base64
@@ -544,7 +555,7 @@ class NIMEstimator:
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
         logger.info(f"NIM raw extract_from_image response: {content!r}")
-        return _label_to_recipe(LabelExtraction.model_validate(json.loads(content)))
+        return _label_to_recipe(LabelExtraction.model_validate(json.loads(_strip_fences(content))))
 
 
 def _load_api_keys() -> dict[str, str]:

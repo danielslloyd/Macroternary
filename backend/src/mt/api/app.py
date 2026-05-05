@@ -82,6 +82,16 @@ def create_app() -> FastAPI:
     def version() -> dict:
         return {"version": __version__}
 
+    @app.get("/api/api-keys")
+    def api_keys() -> dict:
+        """Return available API keys (keys only, no values) and whether each is configured."""
+        keys = recipe_mod.get_api_keys()
+        return {
+            provider: bool(key)
+            for provider in ["anthropic", "openai", "grok", "google", "nim", "ollama"]
+            for key in [keys.get(provider, "")]
+        }
+
     @app.get("/admin/api/families")
     def families(db: Session = Depends(get_db)) -> list[dict]:
         return [

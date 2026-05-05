@@ -503,6 +503,7 @@ class NIMEstimator:
             )
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
+        logger.info(f"NIM raw estimate response: {content!r}")
         return EstimatedRecipe.model_validate(json.loads(content))
 
     async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
@@ -533,6 +534,7 @@ class NIMEstimator:
             )
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
+        logger.info(f"NIM raw extract_from_image response: {content!r}")
         return EstimatedRecipe.model_validate(json.loads(content))
 
 

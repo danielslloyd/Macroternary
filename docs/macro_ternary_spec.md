@@ -224,7 +224,7 @@ class RetailerAdapter(Protocol):
 
 ### Fallback: photo pipeline (local web UI)
 
-Photo-sourced rows are reviewed through a local web app served by the FastAPI backend at `http://localhost:8000/admin`. Workflow:
+Photo-sourced rows are reviewed through a local web app served by the FastAPI backend at `http://localhost:8001/admin`. Workflow:
 
 1. **Upload** — drag-and-drop one or many label photos. Each upload kicks off an async VLM job.
 2. **Queue view** — table of pending extractions with thumbnail, status (`processing` / `ready` / `error`), and confidence.

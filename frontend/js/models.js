@@ -56,12 +56,20 @@ let ollamaModels = [];
 
 export async function loadApiKeys() {
   try {
+    console.log("[loadApiKeys] Fetching /data/api-keys.json");
     const res = await fetch("/data/api-keys.json");
+    console.log("[loadApiKeys] Response status:", res.status, res.ok);
     if (res.ok) {
       apiKeys = await res.json();
+      console.log("[loadApiKeys] Loaded keys:", Object.keys(apiKeys));
+      for (const [provider, key] of Object.entries(apiKeys)) {
+        console.log(`[loadApiKeys] ${provider}: ${key ? `${key.length} chars` : "empty/null"}`);
+      }
+    } else {
+      console.warn("[loadApiKeys] Response not OK:", res.status, res.statusText);
     }
   } catch (err) {
-    console.warn("Could not load API keys:", err.message);
+    console.warn("[loadApiKeys] Fetch failed:", err.message);
   }
 }
 

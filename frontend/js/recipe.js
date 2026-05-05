@@ -235,7 +235,7 @@ export async function openAIModal({ onAdd }) {
     wrap.title = tooltip;
 
     const borderColor = p.available ? p.bgColor : UNLIT_GRAY;
-    const bgColor = p.available ? p.bgColor : "transparent";
+    const bgColor = "transparent";
     const iconHtml = p.available
       ? `<img src="${p.icon}" alt="${p.label}" class="w-6 h-6" />`
       : `<div class="w-6 h-6" style="

@@ -478,25 +478,25 @@ class GrokEstimator:
 
 
 class NIMEstimator:
-    def __init__(self, api_key: str, model: str = "nvidia/meta-llama-3.1-405b-instruct") -> None:
+    def __init__(self, api_key: str, model: str = "microsoft/phi-4-multimodal-instruct") -> None:
         self.api_key = api_key
         self.model = model
         self.name = f"nim_{model}"
-        self.base_url = "https://integrate.api.nvidia.com/v1"
+        self.base_url = "https://ai.api.nvidia.com/v1"
 
     async def estimate(self, text: str) -> EstimatedRecipe:
         body = {
-            "model": self.model,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"Recipe:\n{text}\n\nRespond with strict JSON."},
             ],
             "temperature": 0.1,
+            "max_tokens": 1024,
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers={"authorization": f"Bearer {self.api_key}"},
+                f"{self.base_url}/vlm/{self.model}",
+                headers={"Authorization": f"Bearer {self.api_key}"},
                 json=body,
             )
         resp.raise_for_status()
@@ -508,23 +508,20 @@ class NIMEstimator:
 
         b64_image = base64.b64encode(image_data).decode()
         body = {
-            "model": self.model,
             "messages": [
                 {"role": "system", "content": LABEL_PROMPT},
                 {
                     "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Extract the macros from this nutrition label. Respond with strict JSON."},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}},
-                    ],
+                    "content": f'Extract the macros from this nutrition label. Respond with strict JSON. <img src="data:image/jpeg;base64,{b64_image}" />',
                 },
             ],
             "temperature": 0.1,
+            "max_tokens": 512,
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers={"authorization": f"Bearer {self.api_key}"},
+                f"{self.base_url}/vlm/{self.model}",
+                headers={"Authorization": f"Bearer {self.api_key}"},
                 json=body,
             )
         resp.raise_for_status()
@@ -633,8 +630,8 @@ def get_estimator(provider: str | None = None, model: str | None = None) -> Reci
         if not api_key:
             logger.warning("NVIDIA NIM key not found")
             return None
-        logger.info(f"Using NVIDIA NIM with model {model or 'nvidia/meta-llama-3.1-405b-instruct'}")
-        return NIMEstimator(api_key, model or "nvidia/meta-llama-3.1-405b-instruct")
+        logger.info(f"Using NVIDIA NIM with model {model or 'microsoft/phi-4-multimodal-instruct'}")
+        return NIMEstimator(api_key, model or "microsoft/phi-4-multimodal-instruct")
     elif provider == "ollama":
         # Ollama runs locally, no API key needed
         logger.info(f"Using Ollama with model {model or 'mistral'}")

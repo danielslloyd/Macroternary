@@ -57,7 +57,7 @@ let ollamaModels = [];
 export async function loadApiKeys() {
   try {
     console.log("[loadApiKeys] Fetching /api/api-keys from backend");
-    const res = await fetch("/api/api-keys");
+    const res = await fetch("/api/api-keys", { cache: "no-cache" });
     console.log("[loadApiKeys] Response status:", res.status, res.ok);
     if (res.ok) {
       const serverKeys = await res.json();

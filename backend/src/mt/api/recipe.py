@@ -565,13 +565,33 @@ def _load_api_keys() -> dict[str, str]:
 
 
 _API_KEYS_CACHE = None
+_CACHE_TIMESTAMP = None
 
 
-def get_api_keys() -> dict[str, str]:
-    """Get cached API keys."""
-    global _API_KEYS_CACHE
-    if _API_KEYS_CACHE is None:
-        _API_KEYS_CACHE = _load_api_keys()
+def get_api_keys(force_reload: bool = False) -> dict[str, str]:
+    """Get API keys, reloading from disk if file has changed."""
+    global _API_KEYS_CACHE, _CACHE_TIMESTAMP
+
+    api_keys_path = Path(__file__).resolve().parents[4] / "frontend" / "data" / "api-keys.json"
+    if not api_keys_path.exists():
+        if force_reload:
+            _API_KEYS_CACHE = None
+        if _API_KEYS_CACHE is None:
+            _API_KEYS_CACHE = _load_api_keys()
+        return _API_KEYS_CACHE
+
+    # Check if file has been modified since last load
+    try:
+        current_mtime = api_keys_path.stat().st_mtime
+        if force_reload or _CACHE_TIMESTAMP is None or current_mtime != _CACHE_TIMESTAMP:
+            logger.info(f"[get_api_keys] Reloading keys (force={force_reload}, mtime changed={current_mtime != _CACHE_TIMESTAMP})")
+            _API_KEYS_CACHE = _load_api_keys()
+            _CACHE_TIMESTAMP = current_mtime
+    except Exception as e:
+        logger.warning(f"[get_api_keys] Could not check file mtime: {e}, using cache")
+        if _API_KEYS_CACHE is None:
+            _API_KEYS_CACHE = _load_api_keys()
+
     return _API_KEYS_CACHE
 
 

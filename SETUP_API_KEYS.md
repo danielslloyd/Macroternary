@@ -12,7 +12,8 @@ The Macro Ternary recipe estimator supports multiple LLM providers. To use the A
   "anthropic": "your-anthropic-api-key-here",
   "openai": "your-openai-api-key-here",
   "grok": "your-grok-api-key-here",
-  "google": "your-google-api-key-here"
+  "google": "your-google-api-key-here",
+  "nim": "your-nvidia-nim-api-key-here"
 }
 ```
 
@@ -26,6 +27,7 @@ The Macro Ternary recipe estimator supports multiple LLM providers. To use the A
 - **OpenAI** (GPT-4o, GPT-4o-mini, GPT-4 Turbo)
 - **Grok** (Grok-3)
 - **Google** (Gemini 2.0 Flash, Gemini 1.5 Pro)
+- **NVIDIA NIM** (Meta Llama 3.1 405B, Mistral, Nemotron, and more)
 
 ## Getting API Keys
 
@@ -33,6 +35,7 @@ The Macro Ternary recipe estimator supports multiple LLM providers. To use the A
 - **OpenAI**: https://platform.openai.com/api-keys
 - **Grok**: https://developer.x.ai/
 - **Google**: https://ai.google.dev/
+- **NVIDIA NIM**: https://build.nvidia.com/
 
 ## Note
 

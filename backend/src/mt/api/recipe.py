@@ -477,6 +477,61 @@ class GrokEstimator:
         raise NotImplementedError("Grok image extraction not yet implemented")
 
 
+class NIMEstimator:
+    def __init__(self, api_key: str, model: str = "nvidia/meta-llama-3.1-405b-instruct") -> None:
+        self.api_key = api_key
+        self.model = model
+        self.name = f"nim_{model}"
+        self.base_url = "https://integrate.api.nvidia.com/v1"
+
+    async def estimate(self, text: str) -> EstimatedRecipe:
+        body = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Recipe:\n{text}\n\nRespond with strict JSON."},
+            ],
+            "temperature": 0.1,
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers={"authorization": f"Bearer {self.api_key}"},
+                json=body,
+            )
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+        return EstimatedRecipe.model_validate(json.loads(content))
+
+    async def extract_from_image(self, image_data: bytes) -> EstimatedRecipe:
+        import base64
+
+        b64_image = base64.b64encode(image_data).decode()
+        body = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": LABEL_PROMPT},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Extract the macros from this nutrition label. Respond with strict JSON."},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}},
+                    ],
+                },
+            ],
+            "temperature": 0.1,
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers={"authorization": f"Bearer {self.api_key}"},
+                json=body,
+            )
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+        return EstimatedRecipe.model_validate(json.loads(content))
+
+
 def _load_api_keys() -> dict[str, str]:
     """Load API keys from api-keys.json or environment variables."""
     keys = {}
@@ -498,7 +553,7 @@ def _load_api_keys() -> dict[str, str]:
         logger.warning(f"api-keys.json not found at {api_keys_path}")
 
     # Also check environment variables (they override api-keys.json)
-    for provider in ["openai", "anthropic", "google", "grok"]:
+    for provider in ["openai", "anthropic", "google", "grok", "nim"]:
         env_var = f"{provider.upper()}_API_KEY"
         env_key = os.getenv(env_var)
         if env_key:
@@ -553,6 +608,13 @@ def get_estimator(provider: str | None = None, model: str | None = None) -> Reci
             return None
         logger.info(f"Using Grok with model {model or 'grok-3'}")
         return GrokEstimator(api_key, model or "grok-3")
+    elif provider == "nim":
+        api_key = keys.get("nim")
+        if not api_key:
+            logger.warning("NVIDIA NIM key not found")
+            return None
+        logger.info(f"Using NVIDIA NIM with model {model or 'nvidia/meta-llama-3.1-405b-instruct'}")
+        return NIMEstimator(api_key, model or "nvidia/meta-llama-3.1-405b-instruct")
     elif provider == "ollama":
         # Ollama runs locally, no API key needed
         logger.info(f"Using Ollama with model {model or 'mistral'}")
@@ -560,7 +622,7 @@ def get_estimator(provider: str | None = None, model: str | None = None) -> Reci
     else:
         # Fallback: try providers in order, then Ollama
         logger.info(f"No provider specified, trying providers in order: {list(keys.keys())}")
-        for p in ["openai", "anthropic", "google", "grok"]:
+        for p in ["openai", "anthropic", "google", "grok", "nim"]:
             if p in keys:
                 est = get_estimator(p, model)
                 if est:

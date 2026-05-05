@@ -44,7 +44,6 @@ const PROVIDER_CONFIGS = {
     icon: "/icons/nim.svg",
     models: [
       "microsoft/phi-4-multimodal-instruct",
-      "google/paligemma",
     ],
     capabilities: ["text", "image"],
     bgColor: "#74B71B",

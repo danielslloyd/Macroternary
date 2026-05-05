@@ -40,6 +40,36 @@ class EstimatedRecipe(BaseModel):
     error: str | None = None
 
 
+class LabelExtraction(BaseModel):
+    serving_size_g: float | None = None
+    kcal: float
+    p: float
+    c: float
+    f: float
+    assumptions: list[str] = Field(default_factory=list)
+    confidence: Literal["high", "medium", "low"] = "medium"
+    error: str | None = None
+
+
+def _label_to_recipe(label: LabelExtraction) -> EstimatedRecipe:
+    if label.error:
+        return EstimatedRecipe(error=label.error)
+    item = EstimatedItem(
+        ingredient="serving",
+        quantity_g=label.serving_size_g,
+        kcal=label.kcal,
+        p=label.p,
+        c=label.c,
+        f=label.f,
+    )
+    return EstimatedRecipe(
+        items=[item],
+        totals={"kcal": label.kcal, "p": label.p, "c": label.c, "f": label.f},
+        assumptions=label.assumptions,
+        confidence=label.confidence,
+    )
+
+
 class RecipeEstimator(Protocol):
     name: str
 
@@ -152,7 +182,7 @@ class OpenAIEstimator:
             )
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
-        return EstimatedRecipe.model_validate(json.loads(content))
+        return _label_to_recipe(LabelExtraction.model_validate(json.loads(content)))
 
 
 class AnthropicEstimator:
@@ -212,7 +242,7 @@ class AnthropicEstimator:
             )
         resp.raise_for_status()
         content = resp.json()["content"][0]["text"]
-        return EstimatedRecipe.model_validate(json.loads(content))
+        return _label_to_recipe(LabelExtraction.model_validate(json.loads(content)))
 
 
 class GoogleEstimator:
@@ -314,7 +344,7 @@ class GoogleEstimator:
             )
         resp.raise_for_status()
         content = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return EstimatedRecipe.model_validate(json.loads(content))
+        return _label_to_recipe(LabelExtraction.model_validate(json.loads(content)))
 
 
 class OllamaEstimator:
@@ -424,28 +454,7 @@ class OllamaEstimator:
         content = data["message"]["content"]
         logger.info(f"Extracted content: {content}")
         self._check_gpu_usage(data)
-        try:
-            parsed = json.loads(content)
-            logger.info(f"Parsed JSON: {json.dumps(parsed, indent=2)}")
-            # Label responses have kcal/p/c/f at the top level; remap into totals
-            if "error" not in parsed and any(k in parsed for k in ("kcal", "p", "c", "f")):
-                remapped = {
-                    "items": [],
-                    "totals": {k: parsed[k] for k in ("kcal", "p", "c", "f") if k in parsed},
-                    "assumptions": parsed.get("assumptions", []),
-                    "confidence": parsed.get("confidence", "medium"),
-                }
-                logger.info(f"Remapped to EstimatedRecipe format: {json.dumps(remapped, indent=2)}")
-                parsed = remapped
-            result = EstimatedRecipe.model_validate(parsed)
-            logger.info(f"Validation successful: {result.model_dump()}")
-            return result
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error: {e}\nContent: {content}")
-            raise
-        except Exception as e:
-            logger.error(f"Validation error: {e}\nParsed: {parsed}")
-            raise
+        return _label_to_recipe(LabelExtraction.model_validate(json.loads(content)))
 
 
 class GrokEstimator:
@@ -535,7 +544,7 @@ class NIMEstimator:
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
         logger.info(f"NIM raw extract_from_image response: {content!r}")
-        return EstimatedRecipe.model_validate(json.loads(content))
+        return _label_to_recipe(LabelExtraction.model_validate(json.loads(content)))
 
 
 def _load_api_keys() -> dict[str, str]:

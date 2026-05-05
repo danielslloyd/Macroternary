@@ -58,13 +58,13 @@ uv run mt seed-demo
 cd ..
 
 echo.
-echo Starting server on http://127.0.0.1:8000
+echo Starting server on http://127.0.0.1:8001
 echo Opening browser...
 echo.
 echo Press Ctrl+C to stop the server.
 echo.
 
-start http://127.0.0.1:8000
+start http://127.0.0.1:8001
 timeout /t 2 /nobreak >nul
 cd backend
 echo.

@@ -39,6 +39,16 @@ const PROVIDER_CONFIGS = {
     dynamic: true,
     bgColor: "#000000",
   },
+  nim: {
+    label: "NVIDIA NIM",
+    icon: "/icons/nim.svg",
+    models: [
+      "nemotron-3-nano-omni-30b-a3b-reasoning",
+      "paligemma",
+    ],
+    capabilities: ["text", "image"],
+    bgColor: "#76b900",
+  },
 };
 
 let apiKeys = {};

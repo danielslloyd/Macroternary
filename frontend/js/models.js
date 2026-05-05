@@ -87,7 +87,10 @@ export async function loadOllamaModels() {
 }
 
 function hasKey(provider) {
-  return !!(apiKeys[provider] && apiKeys[provider].trim());
+  const key = apiKeys[provider];
+  const has = !!(key && key.trim());
+  console.log(`[hasKey] provider=${provider}, key exists=${!!key}, trimmed length=${key?.trim?.().length || 0}, result=${has}`);
+  return has;
 }
 
 function isAvailable(provider) {

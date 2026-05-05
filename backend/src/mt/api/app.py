@@ -72,6 +72,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def add_no_cache_headers(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path in ["/", "/styles.css"] or request.url.path.startswith(("/js", "/data", "/icons")):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
+
     # ─── admin JSON endpoints (photo pipeline scaffold) ───────────────────
 
     @app.get("/admin/api/health")
@@ -366,11 +373,18 @@ def create_app() -> FastAPI:
 
         @app.get("/styles.css", include_in_schema=False)
         def styles() -> FileResponse:
-            return FileResponse(FRONTEND_DIR / "styles.css", media_type="text/css")
+            return FileResponse(
+                FRONTEND_DIR / "styles.css",
+                media_type="text/css",
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
 
         @app.get("/", include_in_schema=False)
         def index() -> FileResponse:
-            return FileResponse(FRONTEND_DIR / "index.html")
+            return FileResponse(
+                FRONTEND_DIR / "index.html",
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
 
     return app
 

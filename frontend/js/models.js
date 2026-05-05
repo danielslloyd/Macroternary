@@ -127,6 +127,7 @@ export function getModelsByProvider() {
     icon: config.icon,
     capabilities: config.capabilities,
     available: isAvailable(provider),
+    bgColor: config.bgColor,
     models: config.models.map((m) => {
       // m can be a string (openai, anthropic, etc.) or an object (ollama: {name, vision})
       const name = typeof m === "string" ? m : m.name;

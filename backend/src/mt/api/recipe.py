@@ -482,20 +482,22 @@ class NIMEstimator:
         self.api_key = api_key
         self.model = model
         self.name = f"nim_{model}"
-        self.base_url = "https://ai.api.nvidia.com/v1"
+        self.base_url = "https://integrate.api.nvidia.com/v1"
 
     async def estimate(self, text: str) -> EstimatedRecipe:
         body = {
+            "model": self.model,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"Recipe:\n{text}\n\nRespond with strict JSON."},
             ],
             "temperature": 0.1,
             "max_tokens": 1024,
+            "top_p": 0.70,
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                f"{self.base_url}/vlm/{self.model}",
+                f"{self.base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 json=body,
             )
@@ -508,19 +510,24 @@ class NIMEstimator:
 
         b64_image = base64.b64encode(image_data).decode()
         body = {
+            "model": self.model,
             "messages": [
                 {"role": "system", "content": LABEL_PROMPT},
                 {
                     "role": "user",
-                    "content": f'Extract the macros from this nutrition label. Respond with strict JSON. <img src="data:image/jpeg;base64,{b64_image}" />',
+                    "content": [
+                        {"type": "text", "text": "Extract the macros from this nutrition label. Respond with strict JSON."},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}},
+                    ],
                 },
             ],
             "temperature": 0.1,
             "max_tokens": 512,
+            "top_p": 0.70,
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                f"{self.base_url}/vlm/{self.model}",
+                f"{self.base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 json=body,
             )

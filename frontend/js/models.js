@@ -43,8 +43,7 @@ const PROVIDER_CONFIGS = {
     label: "NVIDIA NIM",
     icon: "/icons/nim.svg",
     models: [
-      "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
-      "nvidia/paligemma",
+      "microsoft/phi-4-multimodal-instruct",
     ],
     capabilities: ["text", "image"],
     bgColor: "#74B71B",

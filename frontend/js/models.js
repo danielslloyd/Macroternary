@@ -56,15 +56,21 @@ let ollamaModels = [];
 
 export async function loadApiKeys() {
   try {
-    console.log("[loadApiKeys] Fetching /data/api-keys.json");
-    const res = await fetch("/data/api-keys.json");
+    console.log("[loadApiKeys] Fetching /api/api-keys from backend");
+    const res = await fetch("/api/api-keys");
     console.log("[loadApiKeys] Response status:", res.status, res.ok);
     if (res.ok) {
-      apiKeys = await res.json();
-      console.log("[loadApiKeys] Loaded keys:", Object.keys(apiKeys));
-      for (const [provider, key] of Object.entries(apiKeys)) {
-        console.log(`[loadApiKeys] ${provider}: ${key ? `${key.length} chars` : "empty/null"}`);
+      const serverKeys = await res.json();
+      console.log("[loadApiKeys] Server reports available keys:", serverKeys);
+      // Map backend response back to apiKeys structure for hasKey()
+      apiKeys = {};
+      for (const provider in serverKeys) {
+        if (serverKeys[provider]) {
+          // Key is configured on server; set a dummy value so hasKey() returns true
+          apiKeys[provider] = "configured";
+        }
       }
+      console.log("[loadApiKeys] Local apiKeys set to:", Object.keys(apiKeys));
     } else {
       console.warn("[loadApiKeys] Response not OK:", res.status, res.statusText);
     }

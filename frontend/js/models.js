@@ -7,28 +7,28 @@ const PROVIDER_CONFIGS = {
     icon: "/icons/anthropic.svg",
     models: ["claude-3-5-sonnet-20241022", "claude-3-opus-20250219", "claude-3-haiku-20240307"],
     capabilities: ["text", "image"],
-    bgColor: "#d97706",
+    bgColor: "#D97757",
   },
   openai: {
     label: "OpenAI",
     icon: "/icons/openai.svg",
     models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
     capabilities: ["text", "image"],
-    bgColor: "#059669",
+    bgColor: "#000000",
   },
   grok: {
     label: "Grok",
     icon: "/icons/grok.svg",
     models: ["grok-3"],
     capabilities: ["text"],
-    bgColor: "#8b5cf6",
+    bgColor: "#000000",
   },
   google: {
     label: "Google",
     icon: "/icons/google.svg",
     models: ["gemini-2.0-flash", "gemini-1.5-pro"],
     capabilities: ["text", "image"],
-    bgColor: "#0891b2",
+    bgColor: "#447ed7",
   },
   ollama: {
     label: "Ollama",
@@ -47,7 +47,7 @@ const PROVIDER_CONFIGS = {
       "paligemma",
     ],
     capabilities: ["text", "image"],
-    bgColor: "#76b900",
+    bgColor: "#74B71B",
   },
 };
 

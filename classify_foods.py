@@ -97,6 +97,7 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
     """Process CSV file and classify foods.
 
     Args:
+        model_name: Model to use, or "all" to use all available models
         should_continue: Callable that returns False if should pause/stop
     """
 
@@ -117,8 +118,50 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
             status_callback("CSV is empty")
         return
 
-    # Check if model column exists, create if not
-    fieldnames = list(rows[0].keys()) if rows[0] else []
+    # Handle "all" mode
+    if model_name == "all":
+        models = fetch_available_models()
+        if not models:
+            if status_callback:
+                status_callback("No models available")
+            return
+
+        if status_callback:
+            status_callback(f"Processing with all {len(models)} models: {', '.join(models)}")
+
+        for model in models:
+            if should_continue and not should_continue():
+                if status_callback:
+                    status_callback("Paused. Click Resume to continue.")
+                save_csv(rows, list(rows[0].keys()) if rows else [])
+                return
+
+            if status_callback:
+                status_callback(f"\n{'='*60}\nProcessing model: {model}\n{'='*60}")
+
+            try:
+                process_single_model(model, rows, max_rows, progress_callback, status_callback, should_continue)
+            except Exception as e:
+                import traceback
+                error_msg = f"Error with model {model}: {e}\n{traceback.format_exc()}"
+                if status_callback:
+                    status_callback(error_msg)
+
+        if status_callback:
+            status_callback("Completed processing all models!")
+    else:
+        process_single_model(model_name, rows, max_rows, progress_callback, status_callback, should_continue)
+
+
+def process_single_model(model_name: str, rows: list, max_rows: int, progress_callback=None, status_callback=None, should_continue=None):
+    """Process CSV with a single model.
+
+    Args:
+        rows: List of CSV rows (dicts)
+        should_continue: Callable that returns False if should pause/stop
+    """
+
+    fieldnames = list(rows[0].keys()) if rows else []
     column_name = model_name
     column_exists = column_name in fieldnames
 
@@ -140,6 +183,8 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
     # Classify foods
     classifier = OllamaClassifier(model_name)
     processed = 0
+    consecutive_errors = 0
+    ERROR_THRESHOLD = 10
 
     try:
         for i in range(start_idx, min(start_idx + max_rows, len(rows))):
@@ -162,18 +207,30 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
             if status_callback:
                 status_callback(f"Classifying: {food_name}")
 
-            classification = classifier.classify(food_name)
-            row[column_name] = classification
-            processed += 1
+            try:
+                classification = classifier.classify(food_name)
+                row[column_name] = classification
+                processed += 1
+                consecutive_errors = 0  # Reset error counter on success
 
-            if progress_callback:
-                progress_callback(processed)
+                if progress_callback:
+                    progress_callback(processed)
 
-            # Save progress every 5 rows
-            if processed % 5 == 0:
-                save_csv(rows, fieldnames)
+                # Save progress every 5 rows
+                if processed % 5 == 0:
+                    save_csv(rows, fieldnames)
+                    if status_callback:
+                        status_callback(f"Progress saved ({processed} rows processed)")
+
+            except Exception as e:
+                consecutive_errors += 1
                 if status_callback:
-                    status_callback(f"Progress saved ({processed} rows processed)")
+                    status_callback(f"Error on {food_name} ({consecutive_errors}/{ERROR_THRESHOLD}): {str(e)[:100]}...")
+
+                if consecutive_errors >= ERROR_THRESHOLD:
+                    if status_callback:
+                        status_callback(f"Reached {ERROR_THRESHOLD} consecutive errors. Stopping this model.")
+                    break
 
     finally:
         classifier.close()
@@ -181,7 +238,7 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
     # Final save
     save_csv(rows, fieldnames)
     if status_callback:
-        status_callback(f"Complete! Processed {processed} rows")
+        status_callback(f"Complete! Model '{model_name}' processed {processed} rows")
 
 
 def save_csv(rows, fieldnames):
@@ -273,10 +330,10 @@ class ClassifierUI:
         self.available_models = fetch_available_models()
 
         if self.available_models:
-            self.model_combo["values"] = self.available_models
-            if self.available_models:
-                self.model_combo.current(0)
-            self.log_status(f"Found {len(self.available_models)} models")
+            model_options = ["all"] + self.available_models
+            self.model_combo["values"] = model_options
+            self.model_combo.current(0)
+            self.log_status(f"Found {len(self.available_models)} models: {', '.join(self.available_models)}")
         else:
             self.log_status("No models found. Make sure Ollama is running.")
 

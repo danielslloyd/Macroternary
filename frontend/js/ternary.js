@@ -40,6 +40,32 @@ function shapePath(retailer, size) {
 
 const BOUNDS = { width: 700, height: 620, padding: 48 };
 
+let tooltip = null;
+
+function ensureTooltip() {
+  if (!tooltip) {
+    tooltip = document.createElement("div");
+    tooltip.className = "fixed bg-gray-800 text-white text-xs py-1 px-2 rounded pointer-events-none opacity-0 transition-opacity duration-75 z-50";
+    document.body.appendChild(tooltip);
+  }
+  return tooltip;
+}
+
+function showTooltip(text, event) {
+  const t = ensureTooltip();
+  t.textContent = text;
+  t.classList.remove("opacity-0");
+  const rect = event.target.getBoundingClientRect();
+  t.style.left = (rect.left + rect.width / 2) + "px";
+  t.style.top = (rect.top - 28) + "px";
+  t.style.transform = "translateX(-50%)";
+}
+
+function hideTooltip() {
+  const t = ensureTooltip();
+  t.classList.add("opacity-0");
+}
+
 export function renderTernary({
   container,
   products,
@@ -151,8 +177,12 @@ export function renderTernary({
         event.preventDefault();
         onSelect(d.id);
       }
-    });
-  pointEnter.append("title");
+    })
+    .on("mouseover", (event, d) => {
+      const text = `${d.name} (${d.brand ?? d.retailer}) — ${Math.round(d.kcal)} kcal · ${d.p}P / ${d.c}C / ${d.f}F`;
+      showTooltip(text, event);
+    })
+    .on("mouseout", hideTooltip);
 
   pointSel.exit().remove();
 
@@ -171,13 +201,6 @@ export function renderTernary({
       if (selectedFamily && d.family !== selectedFamily) return 0.15;
       return d.id === selectedId ? 1 : 0.85;
     });
-
-  merged
-    .select("title")
-    .text(
-      (d) =>
-        `${d.name} (${d.brand ?? d.retailer}) — ${Math.round(d.kcal)} kcal · ${d.p}P / ${d.c}C / ${d.f}F`,
-    );
 
   // ─── recipe diamonds ─────────────────────────────────────────────────
   const recipeGroup = svg

@@ -36,6 +36,17 @@ Based on how commonly this food appears in typical American diets, grocery store
 
 Respond with ONLY the classification word (common, middle, or uncommon). No explanation."""
 
+# Macro estimation prompt template
+MACRO_PROMPT = """You are estimating nutritional values for a food per 100g serving.
+
+Food: {food_name}
+
+Estimate the nutritional content per 100g. Respond with ONLY a JSON object (no markdown, no explanation):
+{{"kcal": <number>, "protein_g": <number>, "fat_g": <number>, "carbs_g": <number>}}
+
+Example response format:
+{{"kcal": 52, "protein_g": 1.0, "fat_g": 5.0, "carbs_g": 0.8}}"""
+
 
 class OllamaClassifier:
     def __init__(self, model_name: str):
@@ -71,6 +82,60 @@ class OllamaClassifier:
         except Exception as e:
             import traceback
             error_msg = f"Error classifying {food_name}: {e}\n{traceback.format_exc()}"
+            print(error_msg)
+            raise Exception(error_msg)
+
+    def estimate_macros(self, food_name: str) -> dict:
+        """Estimate macros for a food and return as dict with kcal, protein_g, fat_g, carbs_g."""
+        prompt = MACRO_PROMPT.format(food_name=food_name)
+
+        try:
+            response = self.client.post(
+                "/api/generate",
+                json={
+                    "model": self.model_name,
+                    "prompt": prompt,
+                    "stream": False,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            result = data.get("response", "").strip()
+
+            # Remove markdown code blocks if present
+            if result.startswith("```"):
+                result = result.split("```")[1]
+                if result.startswith("json"):
+                    result = result[4:]
+            result = result.strip()
+
+            # Parse JSON
+            macro_data = json.loads(result)
+
+            # Validate required fields
+            required = {"kcal", "protein_g", "fat_g", "carbs_g"}
+            if not all(k in macro_data for k in required):
+                raise ValueError(f"Missing required fields. Got: {macro_data}")
+
+            # Validate numeric values
+            for key in required:
+                val = macro_data[key]
+                if not isinstance(val, (int, float)) or val < 0:
+                    raise ValueError(f"Invalid value for {key}: {val}")
+
+            return {
+                "kcal": round(float(macro_data["kcal"]), 1),
+                "protein_g": round(float(macro_data["protein_g"]), 1),
+                "fat_g": round(float(macro_data["fat_g"]), 1),
+                "carbs_g": round(float(macro_data["carbs_g"]), 1),
+            }
+        except json.JSONDecodeError as e:
+            error_msg = f"Failed to parse JSON for {food_name}: {e}\nRaw response: {result}"
+            print(error_msg)
+            raise Exception(error_msg)
+        except Exception as e:
+            import traceback
+            error_msg = f"Error estimating macros for {food_name}: {e}\n{traceback.format_exc()}"
             print(error_msg)
             raise Exception(error_msg)
 
@@ -154,7 +219,7 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
 
 
 def process_single_model(model_name: str, rows: list, max_rows: int, progress_callback=None, status_callback=None, should_continue=None):
-    """Process CSV with a single model.
+    """Process CSV with a single model for both prevalence and macro estimation.
 
     Args:
         rows: List of CSV rows (dicts)
@@ -162,18 +227,27 @@ def process_single_model(model_name: str, rows: list, max_rows: int, progress_ca
     """
 
     fieldnames = list(rows[0].keys()) if rows else []
-    column_name = model_name
-    column_exists = column_name in fieldnames
 
-    if not column_exists:
-        fieldnames.append(column_name)
-        for row in rows:
-            row[column_name] = ""
+    # Define column names for this model
+    prevalence_col = f"{model_name}_common"
+    kcal_col = f"{model_name}_kCal"
+    protein_col = f"{model_name}_protein_g"
+    fat_col = f"{model_name}_fat_g"
+    carbs_col = f"{model_name}_carbs_g"
 
-    # Find first empty row
+    macro_cols = [kcal_col, protein_col, fat_col, carbs_col]
+
+    # Create columns if they don't exist
+    for col in [prevalence_col] + macro_cols:
+        if col not in fieldnames:
+            fieldnames.append(col)
+            for row in rows:
+                row[col] = ""
+
+    # Find first row that needs processing (both prevalence and macros empty)
     start_idx = 0
     for i, row in enumerate(rows):
-        if not row.get(column_name, "").strip():
+        if not row.get(prevalence_col, "").strip() or not row.get(kcal_col, "").strip():
             start_idx = i
             break
 
@@ -201,36 +275,60 @@ def process_single_model(model_name: str, rows: list, max_rows: int, progress_ca
             if not food_name:
                 continue
 
-            if row.get(column_name, "").strip():
+            # Skip if both prevalence and macros are already filled
+            if row.get(prevalence_col, "").strip() and row.get(kcal_col, "").strip():
                 continue
 
-            if status_callback:
-                status_callback(f"Classifying: {food_name}")
-
-            try:
-                classification = classifier.classify(food_name)
-                row[column_name] = classification
-                processed += 1
-                consecutive_errors = 0  # Reset error counter on success
-
-                if progress_callback:
-                    progress_callback(processed)
-
-                # Save progress every 5 rows
-                if processed % 5 == 0:
-                    save_csv(rows, fieldnames)
-                    if status_callback:
-                        status_callback(f"Progress saved ({processed} rows processed)")
-
-            except Exception as e:
-                consecutive_errors += 1
+            # Process prevalence if empty
+            if not row.get(prevalence_col, "").strip():
                 if status_callback:
-                    status_callback(f"Error on {food_name} ({consecutive_errors}/{ERROR_THRESHOLD}): {str(e)[:100]}...")
+                    status_callback(f"Classifying prevalence: {food_name}")
 
-                if consecutive_errors >= ERROR_THRESHOLD:
+                try:
+                    classification = classifier.classify(food_name)
+                    row[prevalence_col] = classification
+                    consecutive_errors = 0
+                except Exception as e:
+                    consecutive_errors += 1
                     if status_callback:
-                        status_callback(f"Reached {ERROR_THRESHOLD} consecutive errors. Stopping this model.")
-                    break
+                        status_callback(f"Prevalence error on {food_name} ({consecutive_errors}/{ERROR_THRESHOLD}): {str(e)[:100]}...")
+                    if consecutive_errors >= ERROR_THRESHOLD:
+                        if status_callback:
+                            status_callback(f"Reached {ERROR_THRESHOLD} consecutive errors. Stopping this model.")
+                        break
+                    continue
+
+            # Process macros if empty
+            if not row.get(kcal_col, "").strip():
+                if status_callback:
+                    status_callback(f"Estimating macros: {food_name}")
+
+                try:
+                    macros = classifier.estimate_macros(food_name)
+                    row[kcal_col] = macros["kcal"]
+                    row[protein_col] = macros["protein_g"]
+                    row[fat_col] = macros["fat_g"]
+                    row[carbs_col] = macros["carbs_g"]
+                    consecutive_errors = 0
+                except Exception as e:
+                    consecutive_errors += 1
+                    if status_callback:
+                        status_callback(f"Macro error on {food_name} ({consecutive_errors}/{ERROR_THRESHOLD}): {str(e)[:100]}...")
+                    if consecutive_errors >= ERROR_THRESHOLD:
+                        if status_callback:
+                            status_callback(f"Reached {ERROR_THRESHOLD} consecutive errors. Stopping this model.")
+                        break
+                    continue
+
+            processed += 1
+            if progress_callback:
+                progress_callback(processed)
+
+            # Save progress every 5 rows
+            if processed % 5 == 0:
+                save_csv(rows, fieldnames)
+                if status_callback:
+                    status_callback(f"Progress saved ({processed} rows processed)")
 
     finally:
         classifier.close()

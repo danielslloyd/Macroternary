@@ -23,6 +23,7 @@ except ImportError:
 OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 CSV_PATH = Path(__file__).parent / "food_data_combined.csv"
 MAX_ROWS = 25
+DEFAULT_TIMEOUT = 15
 
 # Prevalence prompt template
 PREVALENCE_PROMPT = """You are classifying how common a food is in 21st century American cuisine.
@@ -41,17 +42,18 @@ MACRO_PROMPT = """You are estimating nutritional values for a food per 100g serv
 
 Food: {food_name}
 
-Estimate the nutritional content per 100g. Respond with ONLY a JSON object (no markdown, no explanation):
-{{"kcal": <number>, "protein_g": <number>, "fat_g": <number>, "carbs_g": <number>}}
+Estimate the nutritional content per 100g. Respond with ONLY the values in this format:
+[kcal]_[protein_g]_[fat_g]_[carbs_g]
 
-Example response format:
-{{"kcal": 52, "protein_g": 1.0, "fat_g": 5.0, "carbs_g": 0.8}}"""
+Example response:
+52_1.0_5.0_0.8"""
 
 
 class OllamaClassifier:
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, timeout: float = DEFAULT_TIMEOUT):
         self.model_name = model_name
-        self.client = httpx.Client(base_url=OLLAMA_BASE_URL, timeout=120.0)
+        self.timeout = timeout
+        self.client = httpx.Client(base_url=OLLAMA_BASE_URL, timeout=timeout)
 
     def classify(self, food_name: str) -> str:
         """Classify a food and return the prevalence category."""
@@ -102,40 +104,37 @@ class OllamaClassifier:
             data = response.json()
             result = data.get("response", "").strip()
 
-            # Remove markdown code blocks if present
-            if result.startswith("```"):
-                result = result.split("```")[1]
-                if result.startswith("json"):
-                    result = result[4:]
-            result = result.strip()
+            # Extract numbers from the response
+            # Format: [kcal]_[protein]_[fat]_[carbs]
+            # Try to find the pattern with underscores
+            parts = result.split("_")
+            if len(parts) < 4:
+                raise ValueError(f"Expected 4 values separated by underscores, got: {result}")
 
-            # Parse JSON
-            macro_data = json.loads(result)
+            # Extract just the numeric values
+            values = []
+            for part in parts[:4]:
+                # Remove any non-numeric characters except decimal point
+                cleaned = "".join(c for c in part if c.isdigit() or c == ".")
+                if not cleaned:
+                    raise ValueError(f"Could not extract number from: {part}")
+                values.append(float(cleaned))
 
-            # Validate required fields
-            required = {"kcal", "protein_g", "fat_g", "carbs_g"}
-            if not all(k in macro_data for k in required):
-                raise ValueError(f"Missing required fields. Got: {macro_data}")
+            kcal, protein_g, fat_g, carbs_g = values
 
             # Validate numeric values
-            for key in required:
-                val = macro_data[key]
-                if not isinstance(val, (int, float)) or val < 0:
-                    raise ValueError(f"Invalid value for {key}: {val}")
+            if any(v < 0 for v in values):
+                raise ValueError(f"Negative values not allowed: kcal={kcal}, protein={protein_g}, fat={fat_g}, carbs={carbs_g}")
 
             return {
-                "kcal": round(float(macro_data["kcal"]), 1),
-                "protein_g": round(float(macro_data["protein_g"]), 1),
-                "fat_g": round(float(macro_data["fat_g"]), 1),
-                "carbs_g": round(float(macro_data["carbs_g"]), 1),
+                "kcal": round(kcal, 1),
+                "protein_g": round(protein_g, 1),
+                "fat_g": round(fat_g, 1),
+                "carbs_g": round(carbs_g, 1),
             }
-        except json.JSONDecodeError as e:
-            error_msg = f"Failed to parse JSON for {food_name}: {e}\nRaw response: {result}"
-            print(error_msg)
-            raise Exception(error_msg)
         except Exception as e:
             import traceback
-            error_msg = f"Error estimating macros for {food_name}: {e}\n{traceback.format_exc()}"
+            error_msg = f"Error estimating macros for {food_name}: {e}\nRaw response: {result}\n{traceback.format_exc()}"
             print(error_msg)
             raise Exception(error_msg)
 
@@ -150,15 +149,15 @@ def fetch_available_models() -> list[str]:
         response = client.get("/api/tags")
         response.raise_for_status()
         data = response.json()
-        models = [m["name"].split(":")[0] for m in data.get("models", [])]
+        models = [m["name"] for m in data.get("models", [])]
         client.close()
-        return sorted(set(models))
+        return sorted(models)
     except Exception as e:
         print(f"Error fetching models: {e}")
         return []
 
 
-def process_csv(model_name: str, max_rows: int, progress_callback=None, status_callback=None, should_continue=None):
+def process_csv(model_name: str, max_rows: int, progress_callback=None, status_callback=None, should_continue=None, timeout: float = DEFAULT_TIMEOUT):
     """Process CSV file and classify foods.
 
     Args:
@@ -205,7 +204,7 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
                 status_callback(f"\n{'='*60}\nProcessing model: {model}\n{'='*60}")
 
             try:
-                process_single_model(model, rows, max_rows, progress_callback, status_callback, should_continue)
+                process_single_model(model, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
             except Exception as e:
                 import traceback
                 error_msg = f"Error with model {model}: {e}\n{traceback.format_exc()}"
@@ -215,10 +214,10 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
         if status_callback:
             status_callback("Completed processing all models!")
     else:
-        process_single_model(model_name, rows, max_rows, progress_callback, status_callback, should_continue)
+        process_single_model(model_name, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
 
 
-def process_single_model(model_name: str, rows: list, max_rows: int, progress_callback=None, status_callback=None, should_continue=None):
+def process_single_model(model_name: str, rows: list, max_rows: int, progress_callback=None, status_callback=None, should_continue=None, timeout: float = DEFAULT_TIMEOUT):
     """Process CSV with a single model for both prevalence and macro estimation.
 
     Args:
@@ -255,7 +254,7 @@ def process_single_model(model_name: str, rows: list, max_rows: int, progress_ca
         status_callback(f"Starting from row {start_idx + 1}, processing up to {min(max_rows, len(rows) - start_idx)} rows")
 
     # Classify foods
-    classifier = OllamaClassifier(model_name)
+    classifier = OllamaClassifier(model_name, timeout=timeout)
     processed = 0
     consecutive_errors = 0
     ERROR_THRESHOLD = 10
@@ -393,6 +392,12 @@ class ClassifierUI:
         max_btn = ttk.Button(max_rows_frame, text="Max", command=self.set_max_rows)
         max_btn.pack(side=tk.LEFT)
 
+        # Timeout parameter
+        ttk.Label(main_frame, text="Timeout per request (seconds):").pack(anchor=tk.W, pady=(10, 5))
+        self.timeout_var = tk.StringVar(value=str(DEFAULT_TIMEOUT))
+        timeout_entry = ttk.Entry(main_frame, textvariable=self.timeout_var, width=10)
+        timeout_entry.pack(anchor=tk.W, pady=(0, 10))
+
         # CSV path display
         ttk.Label(main_frame, text=f"CSV: {CSV_PATH}").pack(anchor=tk.W, pady=(0, 10))
 
@@ -476,6 +481,19 @@ class ClassifierUI:
             messagebox.showerror("Error", error_msg)
             return
 
+        try:
+            timeout = float(self.timeout_var.get())
+            if timeout < 1:
+                error_msg = "Timeout must be >= 1 second"
+                self.log_status(error_msg)
+                messagebox.showerror("Error", error_msg)
+                return
+        except ValueError:
+            error_msg = "Invalid timeout value"
+            self.log_status(error_msg)
+            messagebox.showerror("Error", error_msg)
+            return
+
         self.processing = True
         self.paused = False
         self.should_continue_flag = True
@@ -492,7 +510,8 @@ class ClassifierUI:
                     max_rows,
                     progress_callback=self.update_progress,
                     status_callback=self.log_status,
-                    should_continue=lambda: self.should_continue_flag
+                    should_continue=lambda: self.should_continue_flag,
+                    timeout=timeout
                 )
             except Exception as e:
                 import traceback

@@ -157,13 +157,13 @@ def fetch_available_models() -> list[str]:
         return []
 
 
-def process_csv(model_name: str, max_rows: int, progress_callback=None, status_callback=None, should_continue=None, timeout: float = DEFAULT_TIMEOUT):
+def process_csv(models: list, max_rows: int, progress_callback=None, status_callback=None, should_continue=None, timeout: float = DEFAULT_TIMEOUT):
     """Process CSV file and classify foods.
 
-    Runs all models through prompt 1 (prevalence), then all models through prompt 2 (macros).
+    Runs all selected models through prompt 1 (prevalence), then all models through prompt 2 (macros).
 
     Args:
-        model_name: Model to use, or "all" to use all available models
+        models: List of model names to process
         should_continue: Callable that returns False if should pause/stop
     """
 
@@ -184,69 +184,19 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
             status_callback("CSV is empty")
         return
 
-    # Handle "all" mode
-    if model_name == "all":
-        models = fetch_available_models()
-        if not models:
-            if status_callback:
-                status_callback("No models available")
-            return
-
+    if not models:
         if status_callback:
-            status_callback(f"Processing {len(models)} models: {', '.join(models)}")
+            status_callback("No models selected")
+        return
 
-        # Phase 1: Prevalence classification for all models
-        if status_callback:
-            status_callback(f"\n{'='*60}\nPHASE 1: PREVALENCE CLASSIFICATION\n{'='*60}")
+    if status_callback:
+        status_callback(f"Processing {len(models)} models: {', '.join(models)}")
 
-        for model in models:
-            if should_continue and not should_continue():
-                if status_callback:
-                    status_callback("Paused. Click Resume to continue.")
-                save_csv(rows, list(rows[0].keys()) if rows else [])
-                return
+    # Phase 1: Prevalence classification for all models
+    if status_callback:
+        status_callback(f"\n{'='*60}\nPHASE 1: PREVALENCE CLASSIFICATION\n{'='*60}")
 
-            if status_callback:
-                status_callback(f"\nProcessing prevalence with model: {model}")
-
-            try:
-                process_prevalence_for_model(model, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
-            except Exception as e:
-                import traceback
-                error_msg = f"Error with model {model} (prevalence): {e}\n{traceback.format_exc()}"
-                if status_callback:
-                    status_callback(error_msg)
-
-        # Phase 2: Macro estimation for all models
-        if status_callback:
-            status_callback(f"\n{'='*60}\nPHASE 2: MACRO ESTIMATION\n{'='*60}")
-
-        for model in models:
-            if should_continue and not should_continue():
-                if status_callback:
-                    status_callback("Paused. Click Resume to continue.")
-                save_csv(rows, list(rows[0].keys()) if rows else [])
-                return
-
-            if status_callback:
-                status_callback(f"\nProcessing macros with model: {model}")
-
-            try:
-                process_macros_for_model(model, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
-            except Exception as e:
-                import traceback
-                error_msg = f"Error with model {model} (macros): {e}\n{traceback.format_exc()}"
-                if status_callback:
-                    status_callback(error_msg)
-
-        if status_callback:
-            status_callback(f"\n{'='*60}\nCompleted all models!\n{'='*60}")
-    else:
-        # Single model: phase 1 then phase 2
-        if status_callback:
-            status_callback(f"Processing model: {model_name}\n\nPhase 1: Prevalence Classification")
-        process_prevalence_for_model(model_name, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
-
+    for model in models:
         if should_continue and not should_continue():
             if status_callback:
                 status_callback("Paused. Click Resume to continue.")
@@ -254,8 +204,40 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
             return
 
         if status_callback:
-            status_callback(f"\nPhase 2: Macro Estimation")
-        process_macros_for_model(model_name, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
+            status_callback(f"\nProcessing prevalence with model: {model}")
+
+        try:
+            process_prevalence_for_model(model, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
+        except Exception as e:
+            import traceback
+            error_msg = f"Error with model {model} (prevalence): {e}\n{traceback.format_exc()}"
+            if status_callback:
+                status_callback(error_msg)
+
+    # Phase 2: Macro estimation for all models
+    if status_callback:
+        status_callback(f"\n{'='*60}\nPHASE 2: MACRO ESTIMATION\n{'='*60}")
+
+    for model in models:
+        if should_continue and not should_continue():
+            if status_callback:
+                status_callback("Paused. Click Resume to continue.")
+            save_csv(rows, list(rows[0].keys()) if rows else [])
+            return
+
+        if status_callback:
+            status_callback(f"\nProcessing macros with model: {model}")
+
+        try:
+            process_macros_for_model(model, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
+        except Exception as e:
+            import traceback
+            error_msg = f"Error with model {model} (macros): {e}\n{traceback.format_exc()}"
+            if status_callback:
+                status_callback(error_msg)
+
+    if status_callback:
+        status_callback(f"\n{'='*60}\nCompleted all {len(models)} model(s)!\n{'='*60}")
 
 
 def process_prevalence_for_model(model_name: str, rows: list, max_rows: int, progress_callback=None, status_callback=None, should_continue=None, timeout: float = DEFAULT_TIMEOUT):
@@ -447,15 +429,22 @@ class ClassifierUI:
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Model selection
-        ttk.Label(main_frame, text="Select Ollama Model:").pack(anchor=tk.W, pady=(0, 5))
-        self.model_var = tk.StringVar()
-        self.model_combo = ttk.Combobox(
-            main_frame,
-            textvariable=self.model_var,
-            state="readonly",
-            width=50
+        ttk.Label(main_frame, text="Select Ollama Models (select multiple):").pack(anchor=tk.W, pady=(0, 5))
+
+        model_frame = ttk.Frame(main_frame)
+        model_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        scrollbar = ttk.Scrollbar(model_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.model_listbox = tk.Listbox(
+            model_frame,
+            selectmode=tk.MULTIPLE,
+            height=6,
+            yscrollcommand=scrollbar.set
         )
-        self.model_combo.pack(fill=tk.X, pady=(0, 10))
+        self.model_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.model_listbox.yview)
 
         refresh_btn = ttk.Button(main_frame, text="Refresh Models", command=self.refresh_models)
         refresh_btn.pack(anchor=tk.W, pady=(0, 10))
@@ -510,11 +499,15 @@ class ClassifierUI:
         self.log_status("Fetching available models...")
         self.available_models = fetch_available_models()
 
+        # Clear and populate listbox
+        self.model_listbox.delete(0, tk.END)
+        for model in self.available_models:
+            self.model_listbox.insert(tk.END, model)
+
         if self.available_models:
-            model_options = ["all"] + self.available_models
-            self.model_combo["values"] = model_options
-            self.model_combo.current(0)
-            self.log_status(f"Found {len(self.available_models)} models: {', '.join(self.available_models)}")
+            # Select all by default
+            self.model_listbox.select_set(0, tk.END)
+            self.log_status(f"Found {len(self.available_models)} models: {', '.join(self.available_models)}\nAll selected by default.")
         else:
             self.log_status("No models found. Make sure Ollama is running.")
 
@@ -541,10 +534,12 @@ class ClassifierUI:
 
     def start_classification(self):
         """Start classification in a background thread."""
-        model = self.model_var.get()
-        if not model:
-            messagebox.showerror("Error", "Please select a model")
+        selected_indices = self.model_listbox.curselection()
+        if not selected_indices:
+            messagebox.showerror("Error", "Please select at least one model")
             return
+
+        selected_models = [self.model_listbox.get(i) for i in selected_indices]
 
         try:
             max_rows = int(self.max_rows_var.get())
@@ -584,7 +579,7 @@ class ClassifierUI:
         def run():
             try:
                 process_csv(
-                    model,
+                    selected_models,
                     max_rows,
                     progress_callback=self.update_progress,
                     status_callback=self.log_status,
@@ -666,27 +661,37 @@ def cli_main():
     for i, model in enumerate(models, 1):
         print(f"  {i}. {model}")
 
-    while True:
+    print("\nEnter model numbers separated by commas (e.g., 1,2,3) or press Enter for all:")
+    selection = input("Select models: ").strip()
+
+    if not selection:
+        selected_models = models
+    else:
+        selected_indices = []
         try:
-            choice = int(input("\nSelect model (number): ")) - 1
-            if 0 <= choice < len(models):
-                selected_model = models[choice]
-                break
+            for choice in selection.split(","):
+                idx = int(choice.strip()) - 1
+                if 0 <= idx < len(models):
+                    selected_indices.append(idx)
+            if not selected_indices:
+                print("Invalid selection")
+                return
+            selected_models = [models[i] for i in selected_indices]
         except ValueError:
-            pass
-        print("Invalid selection")
+            print("Invalid input")
+            return
 
     max_rows_input = input(f"Max rows to process (default {MAX_ROWS}): ").strip()
     max_rows = int(max_rows_input) if max_rows_input else MAX_ROWS
 
-    print(f"\nProcessing with model: {selected_model}")
+    print(f"\nProcessing {len(selected_models)} models: {', '.join(selected_models)}")
     print(f"Max rows: {max_rows}")
 
     def status_callback(msg):
         print(f"[INFO] {msg}")
 
     process_csv(
-        selected_model,
+        selected_models,
         max_rows,
         progress_callback=lambda x: print(f"[PROGRESS] {x}/{max_rows} rows processed"),
         status_callback=status_callback

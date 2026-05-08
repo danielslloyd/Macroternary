@@ -91,8 +91,12 @@ def fetch_available_models() -> list[str]:
         return []
 
 
-def process_csv(model_name: str, max_rows: int, progress_callback=None, status_callback=None):
-    """Process CSV file and classify foods."""
+def process_csv(model_name: str, max_rows: int, progress_callback=None, status_callback=None, should_continue=None):
+    """Process CSV file and classify foods.
+
+    Args:
+        should_continue: Callable that returns False if should pause/stop
+    """
 
     # Read CSV
     rows = []
@@ -137,6 +141,13 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
 
     try:
         for i in range(start_idx, min(start_idx + max_rows, len(rows))):
+            # Check if should continue (pause/stop)
+            if should_continue and not should_continue():
+                if status_callback:
+                    status_callback("Paused. Click Resume to continue.")
+                save_csv(rows, fieldnames)
+                return
+
             row = rows[i]
             food_name = row.get("Food", "").strip()
 
@@ -186,9 +197,12 @@ class ClassifierUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Food Prevalence Classifier")
-        self.root.geometry("600x400")
+        self.root.geometry("600x450")
         self.available_models = []
         self.processing = False
+        self.paused = False
+        self.should_continue_flag = True
+        self.current_thread = None
 
         self.setup_ui()
         self.refresh_models()
@@ -241,7 +255,7 @@ class ClassifierUI:
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill=tk.X, pady=(10, 0))
 
-        self.start_btn = ttk.Button(button_frame, text="Start Classification", command=self.start_classification)
+        self.start_btn = ttk.Button(button_frame, text="Start", command=self.toggle_start_pause)
         self.start_btn.pack(side=tk.LEFT, padx=(0, 5))
 
         self.stop_btn = ttk.Button(button_frame, text="Stop", command=self.stop_classification, state=tk.DISABLED)
@@ -266,6 +280,15 @@ class ClassifierUI:
         self.status_text.see(tk.END)
         self.root.update()
 
+    def toggle_start_pause(self):
+        """Toggle between start and pause/resume."""
+        if not self.processing:
+            # Start
+            self.start_classification()
+        else:
+            # Pause/Resume
+            self.toggle_pause()
+
     def start_classification(self):
         """Start classification in a background thread."""
         model = self.model_var.get()
@@ -283,7 +306,9 @@ class ClassifierUI:
             return
 
         self.processing = True
-        self.start_btn.config(state=tk.DISABLED)
+        self.paused = False
+        self.should_continue_flag = True
+        self.start_btn.config(text="Pause")
         self.stop_btn.config(state=tk.NORMAL)
         self.progress_var.set(0)
         self.progress_bar.config(maximum=max_rows)
@@ -295,23 +320,42 @@ class ClassifierUI:
                     model,
                     max_rows,
                     progress_callback=self.update_progress,
-                    status_callback=self.log_status
+                    status_callback=self.log_status,
+                    should_continue=lambda: self.should_continue_flag
                 )
             except Exception as e:
                 self.log_status(f"Error: {e}")
             finally:
                 self.processing = False
-                self.start_btn.config(state=tk.NORMAL)
+                self.paused = False
+                self.start_btn.config(text="Start", state=tk.NORMAL)
                 self.stop_btn.config(state=tk.DISABLED)
 
-        thread = threading.Thread(target=run, daemon=True)
-        thread.start()
+        self.current_thread = threading.Thread(target=run, daemon=True)
+        self.current_thread.start()
+
+    def toggle_pause(self):
+        """Toggle pause state."""
+        if self.paused:
+            # Resume
+            self.should_continue_flag = True
+            self.paused = False
+            self.start_btn.config(text="Pause")
+            self.log_status("Resumed")
+        else:
+            # Pause
+            self.should_continue_flag = False
+            self.paused = True
+            self.start_btn.config(text="Resume")
+            self.log_status("Paused - Click Resume to continue")
 
     def stop_classification(self):
         """Stop classification."""
+        self.should_continue_flag = False
         self.processing = False
-        self.log_status("Stopping...")
-        self.start_btn.config(state=tk.NORMAL)
+        self.paused = False
+        self.log_status("Stopped.")
+        self.start_btn.config(text="Start", state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
 
     def update_progress(self, value: int):

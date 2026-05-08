@@ -23,6 +23,7 @@ except ImportError:
 OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 CSV_PATH = Path(__file__).parent / "food_data_combined.csv"
 MAX_ROWS = 25
+DEFAULT_TIMEOUT = 15
 
 # Prevalence prompt template
 PREVALENCE_PROMPT = """You are classifying how common a food is in 21st century American cuisine.
@@ -49,9 +50,10 @@ Example response:
 
 
 class OllamaClassifier:
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, timeout: float = DEFAULT_TIMEOUT):
         self.model_name = model_name
-        self.client = httpx.Client(base_url=OLLAMA_BASE_URL, timeout=120.0)
+        self.timeout = timeout
+        self.client = httpx.Client(base_url=OLLAMA_BASE_URL, timeout=timeout)
 
     def classify(self, food_name: str) -> str:
         """Classify a food and return the prevalence category."""
@@ -147,15 +149,15 @@ def fetch_available_models() -> list[str]:
         response = client.get("/api/tags")
         response.raise_for_status()
         data = response.json()
-        models = [m["name"].split(":")[0] for m in data.get("models", [])]
+        models = [m["name"] for m in data.get("models", [])]
         client.close()
-        return sorted(set(models))
+        return sorted(models)
     except Exception as e:
         print(f"Error fetching models: {e}")
         return []
 
 
-def process_csv(model_name: str, max_rows: int, progress_callback=None, status_callback=None, should_continue=None):
+def process_csv(model_name: str, max_rows: int, progress_callback=None, status_callback=None, should_continue=None, timeout: float = DEFAULT_TIMEOUT):
     """Process CSV file and classify foods.
 
     Args:
@@ -202,7 +204,7 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
                 status_callback(f"\n{'='*60}\nProcessing model: {model}\n{'='*60}")
 
             try:
-                process_single_model(model, rows, max_rows, progress_callback, status_callback, should_continue)
+                process_single_model(model, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
             except Exception as e:
                 import traceback
                 error_msg = f"Error with model {model}: {e}\n{traceback.format_exc()}"
@@ -212,10 +214,10 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
         if status_callback:
             status_callback("Completed processing all models!")
     else:
-        process_single_model(model_name, rows, max_rows, progress_callback, status_callback, should_continue)
+        process_single_model(model_name, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
 
 
-def process_single_model(model_name: str, rows: list, max_rows: int, progress_callback=None, status_callback=None, should_continue=None):
+def process_single_model(model_name: str, rows: list, max_rows: int, progress_callback=None, status_callback=None, should_continue=None, timeout: float = DEFAULT_TIMEOUT):
     """Process CSV with a single model for both prevalence and macro estimation.
 
     Args:
@@ -252,7 +254,7 @@ def process_single_model(model_name: str, rows: list, max_rows: int, progress_ca
         status_callback(f"Starting from row {start_idx + 1}, processing up to {min(max_rows, len(rows) - start_idx)} rows")
 
     # Classify foods
-    classifier = OllamaClassifier(model_name)
+    classifier = OllamaClassifier(model_name, timeout=timeout)
     processed = 0
     consecutive_errors = 0
     ERROR_THRESHOLD = 10
@@ -390,6 +392,12 @@ class ClassifierUI:
         max_btn = ttk.Button(max_rows_frame, text="Max", command=self.set_max_rows)
         max_btn.pack(side=tk.LEFT)
 
+        # Timeout parameter
+        ttk.Label(main_frame, text="Timeout per request (seconds):").pack(anchor=tk.W, pady=(10, 5))
+        self.timeout_var = tk.StringVar(value=str(DEFAULT_TIMEOUT))
+        timeout_entry = ttk.Entry(main_frame, textvariable=self.timeout_var, width=10)
+        timeout_entry.pack(anchor=tk.W, pady=(0, 10))
+
         # CSV path display
         ttk.Label(main_frame, text=f"CSV: {CSV_PATH}").pack(anchor=tk.W, pady=(0, 10))
 
@@ -473,6 +481,19 @@ class ClassifierUI:
             messagebox.showerror("Error", error_msg)
             return
 
+        try:
+            timeout = float(self.timeout_var.get())
+            if timeout < 1:
+                error_msg = "Timeout must be >= 1 second"
+                self.log_status(error_msg)
+                messagebox.showerror("Error", error_msg)
+                return
+        except ValueError:
+            error_msg = "Invalid timeout value"
+            self.log_status(error_msg)
+            messagebox.showerror("Error", error_msg)
+            return
+
         self.processing = True
         self.paused = False
         self.should_continue_flag = True
@@ -489,7 +510,8 @@ class ClassifierUI:
                     max_rows,
                     progress_callback=self.update_progress,
                     status_callback=self.log_status,
-                    should_continue=lambda: self.should_continue_flag
+                    should_continue=lambda: self.should_continue_flag,
+                    timeout=timeout
                 )
             except Exception as e:
                 import traceback

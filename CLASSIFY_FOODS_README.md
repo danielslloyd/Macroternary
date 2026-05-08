@@ -35,16 +35,33 @@ A Python script that uses local Ollama models to classify foods by their prevale
 
 ## Usage
 
+### GUI Mode (Recommended)
+
 ```bash
 python3 classify_foods.py
 ```
 
-### UI Guide
+If tkinter is available, a GUI window opens. Otherwise, falls back to CLI mode.
+
+#### UI Guide
 
 1. **Select Model**: Choose from available Ollama models in the dropdown
 2. **Refresh Models**: Click to fetch latest models from Ollama
 3. **Max Rows**: Set how many rows to process (default 25 for testing)
 4. **Start Classification**: Begin processing foods
+
+### CLI Mode (Fallback)
+
+If tkinter is not available, the script runs in interactive CLI mode:
+
+```bash
+python3 classify_foods.py
+
+# Follow prompts to:
+# 1. Select model from list
+# 2. Enter max rows to process
+# 3. Watch progress in terminal
+```
 
 ### What the Script Does
 

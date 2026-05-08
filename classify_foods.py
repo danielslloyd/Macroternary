@@ -8,11 +8,16 @@ import csv
 import json
 import os
 import sys
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
 import httpx
 import threading
 from pathlib import Path
+
+try:
+    import tkinter as tk
+    from tkinter import ttk, messagebox, filedialog
+    HAS_TKINTER = True
+except ImportError:
+    HAS_TKINTER = False
 
 # Configuration
 OLLAMA_BASE_URL = "http://127.0.0.1:11434"
@@ -315,10 +320,57 @@ class ClassifierUI:
         self.root.update()
 
 
+def cli_main():
+    """Command-line interface for the classifier."""
+    print("Food Prevalence Classifier")
+    print("=" * 50)
+
+    print("\nFetching available models...")
+    models = fetch_available_models()
+
+    if not models:
+        print("No models found. Make sure Ollama is running.")
+        return
+
+    print(f"Found {len(models)} models:")
+    for i, model in enumerate(models, 1):
+        print(f"  {i}. {model}")
+
+    while True:
+        try:
+            choice = int(input("\nSelect model (number): ")) - 1
+            if 0 <= choice < len(models):
+                selected_model = models[choice]
+                break
+        except ValueError:
+            pass
+        print("Invalid selection")
+
+    max_rows_input = input(f"Max rows to process (default {MAX_ROWS}): ").strip()
+    max_rows = int(max_rows_input) if max_rows_input else MAX_ROWS
+
+    print(f"\nProcessing with model: {selected_model}")
+    print(f"Max rows: {max_rows}")
+
+    def status_callback(msg):
+        print(f"[INFO] {msg}")
+
+    process_csv(
+        selected_model,
+        max_rows,
+        progress_callback=lambda x: print(f"[PROGRESS] {x}/{max_rows} rows processed"),
+        status_callback=status_callback
+    )
+
+
 def main():
-    root = tk.Tk()
-    app = ClassifierUI(root)
-    root.mainloop()
+    if HAS_TKINTER:
+        root = tk.Tk()
+        app = ClassifierUI(root)
+        root.mainloop()
+    else:
+        print("Tkinter not available. Using CLI mode.")
+        cli_main()
 
 
 if __name__ == "__main__":

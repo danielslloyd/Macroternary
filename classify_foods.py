@@ -41,11 +41,11 @@ MACRO_PROMPT = """You are estimating nutritional values for a food per 100g serv
 
 Food: {food_name}
 
-Estimate the nutritional content per 100g. Respond with ONLY a JSON object (no markdown, no explanation):
-{{"kcal": <number>, "protein_g": <number>, "fat_g": <number>, "carbs_g": <number>}}
+Estimate the nutritional content per 100g. Respond with ONLY the values in this format:
+[kcal]_[protein_g]_[fat_g]_[carbs_g]
 
-Example response format:
-{{"kcal": 52, "protein_g": 1.0, "fat_g": 5.0, "carbs_g": 0.8}}"""
+Example response:
+52_1.0_5.0_0.8"""
 
 
 class OllamaClassifier:
@@ -102,40 +102,37 @@ class OllamaClassifier:
             data = response.json()
             result = data.get("response", "").strip()
 
-            # Remove markdown code blocks if present
-            if result.startswith("```"):
-                result = result.split("```")[1]
-                if result.startswith("json"):
-                    result = result[4:]
-            result = result.strip()
+            # Extract numbers from the response
+            # Format: [kcal]_[protein]_[fat]_[carbs]
+            # Try to find the pattern with underscores
+            parts = result.split("_")
+            if len(parts) < 4:
+                raise ValueError(f"Expected 4 values separated by underscores, got: {result}")
 
-            # Parse JSON
-            macro_data = json.loads(result)
+            # Extract just the numeric values
+            values = []
+            for part in parts[:4]:
+                # Remove any non-numeric characters except decimal point
+                cleaned = "".join(c for c in part if c.isdigit() or c == ".")
+                if not cleaned:
+                    raise ValueError(f"Could not extract number from: {part}")
+                values.append(float(cleaned))
 
-            # Validate required fields
-            required = {"kcal", "protein_g", "fat_g", "carbs_g"}
-            if not all(k in macro_data for k in required):
-                raise ValueError(f"Missing required fields. Got: {macro_data}")
+            kcal, protein_g, fat_g, carbs_g = values
 
             # Validate numeric values
-            for key in required:
-                val = macro_data[key]
-                if not isinstance(val, (int, float)) or val < 0:
-                    raise ValueError(f"Invalid value for {key}: {val}")
+            if any(v < 0 for v in values):
+                raise ValueError(f"Negative values not allowed: kcal={kcal}, protein={protein_g}, fat={fat_g}, carbs={carbs_g}")
 
             return {
-                "kcal": round(float(macro_data["kcal"]), 1),
-                "protein_g": round(float(macro_data["protein_g"]), 1),
-                "fat_g": round(float(macro_data["fat_g"]), 1),
-                "carbs_g": round(float(macro_data["carbs_g"]), 1),
+                "kcal": round(kcal, 1),
+                "protein_g": round(protein_g, 1),
+                "fat_g": round(fat_g, 1),
+                "carbs_g": round(carbs_g, 1),
             }
-        except json.JSONDecodeError as e:
-            error_msg = f"Failed to parse JSON for {food_name}: {e}\nRaw response: {result}"
-            print(error_msg)
-            raise Exception(error_msg)
         except Exception as e:
             import traceback
-            error_msg = f"Error estimating macros for {food_name}: {e}\n{traceback.format_exc()}"
+            error_msg = f"Error estimating macros for {food_name}: {e}\nRaw response: {result}\n{traceback.format_exc()}"
             print(error_msg)
             raise Exception(error_msg)
 

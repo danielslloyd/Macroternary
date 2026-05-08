@@ -160,6 +160,8 @@ def fetch_available_models() -> list[str]:
 def process_csv(model_name: str, max_rows: int, progress_callback=None, status_callback=None, should_continue=None, timeout: float = DEFAULT_TIMEOUT):
     """Process CSV file and classify foods.
 
+    Runs all models through prompt 1 (prevalence), then all models through prompt 2 (macros).
+
     Args:
         model_name: Model to use, or "all" to use all available models
         should_continue: Callable that returns False if should pause/stop
@@ -191,7 +193,11 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
             return
 
         if status_callback:
-            status_callback(f"Processing with all {len(models)} models: {', '.join(models)}")
+            status_callback(f"Processing {len(models)} models: {', '.join(models)}")
+
+        # Phase 1: Prevalence classification for all models
+        if status_callback:
+            status_callback(f"\n{'='*60}\nPHASE 1: PREVALENCE CLASSIFICATION\n{'='*60}")
 
         for model in models:
             if should_continue and not should_continue():
@@ -201,34 +207,136 @@ def process_csv(model_name: str, max_rows: int, progress_callback=None, status_c
                 return
 
             if status_callback:
-                status_callback(f"\n{'='*60}\nProcessing model: {model}\n{'='*60}")
+                status_callback(f"\nProcessing prevalence with model: {model}")
 
             try:
-                process_single_model(model, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
+                process_prevalence_for_model(model, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
             except Exception as e:
                 import traceback
-                error_msg = f"Error with model {model}: {e}\n{traceback.format_exc()}"
+                error_msg = f"Error with model {model} (prevalence): {e}\n{traceback.format_exc()}"
+                if status_callback:
+                    status_callback(error_msg)
+
+        # Phase 2: Macro estimation for all models
+        if status_callback:
+            status_callback(f"\n{'='*60}\nPHASE 2: MACRO ESTIMATION\n{'='*60}")
+
+        for model in models:
+            if should_continue and not should_continue():
+                if status_callback:
+                    status_callback("Paused. Click Resume to continue.")
+                save_csv(rows, list(rows[0].keys()) if rows else [])
+                return
+
+            if status_callback:
+                status_callback(f"\nProcessing macros with model: {model}")
+
+            try:
+                process_macros_for_model(model, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
+            except Exception as e:
+                import traceback
+                error_msg = f"Error with model {model} (macros): {e}\n{traceback.format_exc()}"
                 if status_callback:
                     status_callback(error_msg)
 
         if status_callback:
-            status_callback("Completed processing all models!")
+            status_callback(f"\n{'='*60}\nCompleted all models!\n{'='*60}")
     else:
-        process_single_model(model_name, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
+        # Single model: phase 1 then phase 2
+        if status_callback:
+            status_callback(f"Processing model: {model_name}\n\nPhase 1: Prevalence Classification")
+        process_prevalence_for_model(model_name, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
+
+        if should_continue and not should_continue():
+            if status_callback:
+                status_callback("Paused. Click Resume to continue.")
+            save_csv(rows, list(rows[0].keys()) if rows else [])
+            return
+
+        if status_callback:
+            status_callback(f"\nPhase 2: Macro Estimation")
+        process_macros_for_model(model_name, rows, max_rows, progress_callback, status_callback, should_continue, timeout)
 
 
-def process_single_model(model_name: str, rows: list, max_rows: int, progress_callback=None, status_callback=None, should_continue=None, timeout: float = DEFAULT_TIMEOUT):
-    """Process CSV with a single model for both prevalence and macro estimation.
+def process_prevalence_for_model(model_name: str, rows: list, max_rows: int, progress_callback=None, status_callback=None, should_continue=None, timeout: float = DEFAULT_TIMEOUT):
+    """Process prevalence classification for a single model on all rows."""
 
-    Args:
-        rows: List of CSV rows (dicts)
-        should_continue: Callable that returns False if should pause/stop
-    """
+    fieldnames = list(rows[0].keys()) if rows else []
+    prevalence_col = f"{model_name}_common"
+
+    # Create column if it doesn't exist
+    if prevalence_col not in fieldnames:
+        fieldnames.append(prevalence_col)
+        for row in rows:
+            row[prevalence_col] = ""
+
+    # Find first empty prevalence row
+    start_idx = 0
+    for i, row in enumerate(rows):
+        if not row.get(prevalence_col, "").strip():
+            start_idx = i
+            break
+
+    if status_callback:
+        status_callback(f"Starting prevalence from row {start_idx + 1}, processing up to {min(max_rows, len(rows) - start_idx)} rows")
+
+    classifier = OllamaClassifier(model_name, timeout=timeout)
+    processed = 0
+    consecutive_errors = 0
+    ERROR_THRESHOLD = 10
+
+    try:
+        for i in range(start_idx, min(start_idx + max_rows, len(rows))):
+            if should_continue and not should_continue():
+                if status_callback:
+                    status_callback("Paused.")
+                save_csv(rows, fieldnames)
+                return
+
+            row = rows[i]
+            food_name = row.get("Food", "").strip()
+
+            if not food_name or row.get(prevalence_col, "").strip():
+                continue
+
+            if status_callback:
+                status_callback(f"[{model_name}] Prevalence: {food_name}")
+
+            try:
+                classification = classifier.classify(food_name)
+                row[prevalence_col] = classification
+                processed += 1
+                consecutive_errors = 0
+
+                if progress_callback:
+                    progress_callback(processed)
+
+                if processed % 5 == 0:
+                    save_csv(rows, fieldnames)
+
+            except Exception as e:
+                consecutive_errors += 1
+                if status_callback:
+                    status_callback(f"Error ({consecutive_errors}/{ERROR_THRESHOLD}): {str(e)[:100]}...")
+
+                if consecutive_errors >= ERROR_THRESHOLD:
+                    if status_callback:
+                        status_callback(f"Reached {ERROR_THRESHOLD} consecutive errors. Stopping prevalence for {model_name}.")
+                    break
+
+    finally:
+        classifier.close()
+
+    save_csv(rows, fieldnames)
+    if status_callback:
+        status_callback(f"✓ Prevalence for '{model_name}': {processed} rows")
+
+
+def process_macros_for_model(model_name: str, rows: list, max_rows: int, progress_callback=None, status_callback=None, should_continue=None, timeout: float = DEFAULT_TIMEOUT):
+    """Process macro estimation for a single model on all rows."""
 
     fieldnames = list(rows[0].keys()) if rows else []
 
-    # Define column names for this model
-    prevalence_col = f"{model_name}_common"
     kcal_col = f"{model_name}_kCal"
     protein_col = f"{model_name}_protein_g"
     fat_col = f"{model_name}_fat_g"
@@ -237,23 +345,22 @@ def process_single_model(model_name: str, rows: list, max_rows: int, progress_ca
     macro_cols = [kcal_col, protein_col, fat_col, carbs_col]
 
     # Create columns if they don't exist
-    for col in [prevalence_col] + macro_cols:
+    for col in macro_cols:
         if col not in fieldnames:
             fieldnames.append(col)
             for row in rows:
                 row[col] = ""
 
-    # Find first row that needs processing (both prevalence and macros empty)
+    # Find first empty macro row
     start_idx = 0
     for i, row in enumerate(rows):
-        if not row.get(prevalence_col, "").strip() or not row.get(kcal_col, "").strip():
+        if not row.get(kcal_col, "").strip():
             start_idx = i
             break
 
     if status_callback:
-        status_callback(f"Starting from row {start_idx + 1}, processing up to {min(max_rows, len(rows) - start_idx)} rows")
+        status_callback(f"Starting macros from row {start_idx + 1}, processing up to {min(max_rows, len(rows) - start_idx)} rows")
 
-    # Classify foods
     classifier = OllamaClassifier(model_name, timeout=timeout)
     processed = 0
     consecutive_errors = 0
@@ -261,81 +368,52 @@ def process_single_model(model_name: str, rows: list, max_rows: int, progress_ca
 
     try:
         for i in range(start_idx, min(start_idx + max_rows, len(rows))):
-            # Check if should continue (pause/stop)
             if should_continue and not should_continue():
                 if status_callback:
-                    status_callback("Paused. Click Resume to continue.")
+                    status_callback("Paused.")
                 save_csv(rows, fieldnames)
                 return
 
             row = rows[i]
             food_name = row.get("Food", "").strip()
 
-            if not food_name:
+            if not food_name or row.get(kcal_col, "").strip():
                 continue
 
-            # Skip if both prevalence and macros are already filled
-            if row.get(prevalence_col, "").strip() and row.get(kcal_col, "").strip():
-                continue
+            if status_callback:
+                status_callback(f"[{model_name}] Macros: {food_name}")
 
-            # Process prevalence if empty
-            if not row.get(prevalence_col, "").strip():
+            try:
+                macros = classifier.estimate_macros(food_name)
+                row[kcal_col] = macros["kcal"]
+                row[protein_col] = macros["protein_g"]
+                row[fat_col] = macros["fat_g"]
+                row[carbs_col] = macros["carbs_g"]
+                processed += 1
+                consecutive_errors = 0
+
+                if progress_callback:
+                    progress_callback(processed)
+
+                if processed % 5 == 0:
+                    save_csv(rows, fieldnames)
+
+            except Exception as e:
+                consecutive_errors += 1
                 if status_callback:
-                    status_callback(f"Classifying prevalence: {food_name}")
+                    status_callback(f"Error ({consecutive_errors}/{ERROR_THRESHOLD}): {str(e)[:100]}...")
 
-                try:
-                    classification = classifier.classify(food_name)
-                    row[prevalence_col] = classification
-                    consecutive_errors = 0
-                except Exception as e:
-                    consecutive_errors += 1
+                if consecutive_errors >= ERROR_THRESHOLD:
                     if status_callback:
-                        status_callback(f"Prevalence error on {food_name} ({consecutive_errors}/{ERROR_THRESHOLD}): {str(e)[:100]}...")
-                    if consecutive_errors >= ERROR_THRESHOLD:
-                        if status_callback:
-                            status_callback(f"Reached {ERROR_THRESHOLD} consecutive errors. Stopping this model.")
-                        break
-                    continue
-
-            # Process macros if empty
-            if not row.get(kcal_col, "").strip():
-                if status_callback:
-                    status_callback(f"Estimating macros: {food_name}")
-
-                try:
-                    macros = classifier.estimate_macros(food_name)
-                    row[kcal_col] = macros["kcal"]
-                    row[protein_col] = macros["protein_g"]
-                    row[fat_col] = macros["fat_g"]
-                    row[carbs_col] = macros["carbs_g"]
-                    consecutive_errors = 0
-                except Exception as e:
-                    consecutive_errors += 1
-                    if status_callback:
-                        status_callback(f"Macro error on {food_name} ({consecutive_errors}/{ERROR_THRESHOLD}): {str(e)[:100]}...")
-                    if consecutive_errors >= ERROR_THRESHOLD:
-                        if status_callback:
-                            status_callback(f"Reached {ERROR_THRESHOLD} consecutive errors. Stopping this model.")
-                        break
-                    continue
-
-            processed += 1
-            if progress_callback:
-                progress_callback(processed)
-
-            # Save progress every 5 rows
-            if processed % 5 == 0:
-                save_csv(rows, fieldnames)
-                if status_callback:
-                    status_callback(f"Progress saved ({processed} rows processed)")
+                        status_callback(f"Reached {ERROR_THRESHOLD} consecutive errors. Stopping macros for {model_name}.")
+                    break
 
     finally:
         classifier.close()
 
-    # Final save
     save_csv(rows, fieldnames)
     if status_callback:
-        status_callback(f"Complete! Model '{model_name}' processed {processed} rows")
+        status_callback(f"✓ Macros for '{model_name}': {processed} rows")
 
 
 def save_csv(rows, fieldnames):

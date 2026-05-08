@@ -2,7 +2,7 @@
 // status bar on change. No framework — just plain functions over a state
 // object.
 
-import { loadSnapshot } from "./data.js";
+import { loadSnapshot, loadCSV } from "./data.js";
 import { renderTernary } from "./ternary.js";
 import { renderSidebar } from "./filters.js";
 import { renderDetail } from "./detail.js";
@@ -127,7 +127,7 @@ document
 async function start() {
   state.recipes = readRecipesFromHash();
   try {
-    const snapshot = await loadSnapshot();
+    const snapshot = await loadCSV();
     state.meta = snapshot.meta;
     state.products = snapshot.products;
     state.families = snapshot.families;

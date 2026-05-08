@@ -69,8 +69,10 @@ class OllamaClassifier:
             else:
                 return result if result else "unknown"
         except Exception as e:
-            print(f"Error classifying {food_name}: {e}")
-            return "error"
+            import traceback
+            error_msg = f"Error classifying {food_name}: {e}\n{traceback.format_exc()}"
+            print(error_msg)
+            raise Exception(error_msg)
 
     def close(self):
         self.client.close()
@@ -228,9 +230,13 @@ class ClassifierUI:
 
         # Max rows parameter
         ttk.Label(main_frame, text="Max rows to process:").pack(anchor=tk.W, pady=(0, 5))
+        max_rows_frame = ttk.Frame(main_frame)
+        max_rows_frame.pack(anchor=tk.W, pady=(0, 10))
         self.max_rows_var = tk.StringVar(value=str(MAX_ROWS))
-        max_rows_entry = ttk.Entry(main_frame, textvariable=self.max_rows_var, width=10)
-        max_rows_entry.pack(anchor=tk.W, pady=(0, 10))
+        max_rows_entry = ttk.Entry(max_rows_frame, textvariable=self.max_rows_var, width=10)
+        max_rows_entry.pack(side=tk.LEFT, padx=(0, 5))
+        max_btn = ttk.Button(max_rows_frame, text="Max", command=self.set_max_rows)
+        max_btn.pack(side=tk.LEFT)
 
         # CSV path display
         ttk.Label(main_frame, text=f"CSV: {CSV_PATH}").pack(anchor=tk.W, pady=(0, 10))
@@ -284,7 +290,13 @@ class ClassifierUI:
         """Toggle between start and pause/resume."""
         if not self.processing:
             # Start
-            self.start_classification()
+            try:
+                self.start_classification()
+            except Exception as e:
+                import traceback
+                error_msg = f"Error starting classification: {e}\n\n{traceback.format_exc()}"
+                self.log_status(error_msg)
+                messagebox.showerror("Error", error_msg)
         else:
             # Pause/Resume
             self.toggle_pause()
@@ -299,10 +311,14 @@ class ClassifierUI:
         try:
             max_rows = int(self.max_rows_var.get())
             if max_rows < 1:
-                messagebox.showerror("Error", "Max rows must be >= 1")
+                error_msg = "Max rows must be >= 1"
+                self.log_status(error_msg)
+                messagebox.showerror("Error", error_msg)
                 return
         except ValueError:
-            messagebox.showerror("Error", "Invalid max rows value")
+            error_msg = "Invalid max rows value"
+            self.log_status(error_msg)
+            messagebox.showerror("Error", error_msg)
             return
 
         self.processing = True
@@ -324,7 +340,9 @@ class ClassifierUI:
                     should_continue=lambda: self.should_continue_flag
                 )
             except Exception as e:
-                self.log_status(f"Error: {e}")
+                import traceback
+                error_msg = f"Error during classification: {e}\n\n{traceback.format_exc()}"
+                self.log_status(error_msg)
             finally:
                 self.processing = False
                 self.paused = False
@@ -362,6 +380,22 @@ class ClassifierUI:
         """Update progress bar."""
         self.progress_var.set(value)
         self.root.update()
+
+    def set_max_rows(self):
+        """Set max rows to the total CSV row count."""
+        try:
+            rows = []
+            with open(CSV_PATH, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+
+            if rows:
+                self.max_rows_var.set(str(len(rows)))
+                self.log_status(f"Max rows set to {len(rows)} (total CSV rows)")
+            else:
+                self.log_status("CSV is empty")
+        except Exception as e:
+            self.log_status(f"Error reading CSV: {e}")
 
 
 def cli_main():

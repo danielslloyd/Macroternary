@@ -48,6 +48,64 @@ Estimate the nutritional content per 100g. Respond with ONLY the values in this 
 Example response:
 52_1.0_5.0_0.8"""
 
+# Define prompts as a configurable list
+PROMPTS = [
+    {
+        "name": "prevalence",
+        "column_suffix": "_common",
+        "prompt_template": PREVALENCE_PROMPT,
+        "parser": lambda response: parse_prevalence(response),
+        "columns": ["_common"],
+    },
+    {
+        "name": "macros",
+        "column_suffix": None,  # Uses multiple columns
+        "prompt_template": MACRO_PROMPT,
+        "parser": lambda response: parse_macros(response),
+        "columns": ["_kCal", "_protein_g", "_fat_g", "_carbs_g"],
+    },
+]
+
+
+def parse_prevalence(response: str) -> dict:
+    """Parse prevalence response."""
+    result = response.strip().lower()
+    if "common" in result:
+        return {"_common": "common"}
+    elif "middle" in result:
+        return {"_common": "middle"}
+    elif "uncommon" in result:
+        return {"_common": "uncommon"}
+    else:
+        return {"_common": result if result else "unknown"}
+
+
+def parse_macros(response: str) -> dict:
+    """Parse macro estimation response."""
+    result = response.strip()
+    parts = result.split("_")
+    if len(parts) < 4:
+        raise ValueError(f"Expected 4 values separated by underscores, got: {result}")
+
+    values = []
+    for part in parts[:4]:
+        cleaned = "".join(c for c in part if c.isdigit() or c == ".")
+        if not cleaned:
+            raise ValueError(f"Could not extract number from: {part}")
+        values.append(float(cleaned))
+
+    kcal, protein_g, fat_g, carbs_g = values
+
+    if any(v < 0 for v in values):
+        raise ValueError(f"Negative values not allowed: kcal={kcal}, protein={protein_g}, fat={fat_g}, carbs={carbs_g}")
+
+    return {
+        "_kCal": round(kcal, 1),
+        "_protein_g": round(protein_g, 1),
+        "_fat_g": round(fat_g, 1),
+        "_carbs_g": round(carbs_g, 1),
+    }
+
 
 class OllamaClassifier:
     def __init__(self, model_name: str, timeout: float = DEFAULT_TIMEOUT):
@@ -70,17 +128,9 @@ class OllamaClassifier:
             )
             response.raise_for_status()
             data = response.json()
-            result = data.get("response", "").strip().lower()
-
-            # Normalize response
-            if "common" in result:
-                return "common"
-            elif "middle" in result:
-                return "middle"
-            elif "uncommon" in result:
-                return "uncommon"
-            else:
-                return result if result else "unknown"
+            result = data.get("response", "").strip()
+            parsed = parse_prevalence(result)
+            return parsed["_common"]
         except Exception as e:
             import traceback
             error_msg = f"Error classifying {food_name}: {e}\n{traceback.format_exc()}"
@@ -90,7 +140,7 @@ class OllamaClassifier:
     def estimate_macros(self, food_name: str) -> dict:
         """Estimate macros for a food and return as dict with kcal, protein_g, fat_g, carbs_g."""
         prompt = MACRO_PROMPT.format(food_name=food_name)
-        result = ""  # Initialize to empty string
+        result = ""
 
         try:
             response = self.client.post(
@@ -104,34 +154,12 @@ class OllamaClassifier:
             response.raise_for_status()
             data = response.json()
             result = data.get("response", "").strip()
-
-            # Extract numbers from the response
-            # Format: [kcal]_[protein]_[fat]_[carbs]
-            # Try to find the pattern with underscores
-            parts = result.split("_")
-            if len(parts) < 4:
-                raise ValueError(f"Expected 4 values separated by underscores, got: {result}")
-
-            # Extract just the numeric values
-            values = []
-            for part in parts[:4]:
-                # Remove any non-numeric characters except decimal point
-                cleaned = "".join(c for c in part if c.isdigit() or c == ".")
-                if not cleaned:
-                    raise ValueError(f"Could not extract number from: {part}")
-                values.append(float(cleaned))
-
-            kcal, protein_g, fat_g, carbs_g = values
-
-            # Validate numeric values
-            if any(v < 0 for v in values):
-                raise ValueError(f"Negative values not allowed: kcal={kcal}, protein={protein_g}, fat={fat_g}, carbs={carbs_g}")
-
+            parsed = parse_macros(result)
             return {
-                "kcal": round(kcal, 1),
-                "protein_g": round(protein_g, 1),
-                "fat_g": round(fat_g, 1),
-                "carbs_g": round(carbs_g, 1),
+                "kcal": parsed["_kCal"],
+                "protein_g": parsed["_protein_g"],
+                "fat_g": parsed["_fat_g"],
+                "carbs_g": parsed["_carbs_g"],
             }
         except Exception as e:
             import traceback
@@ -430,7 +458,9 @@ class ClassifierUI:
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Model selection
-        ttk.Label(main_frame, text="Select Ollama Models (select multiple):").pack(anchor=tk.W, pady=(0, 5))
+        model_header_frame = ttk.Frame(main_frame)
+        model_header_frame.pack(anchor=tk.W, pady=(0, 5))
+        ttk.Label(model_header_frame, text="Select Ollama Models (select multiple):").pack(side=tk.LEFT)
 
         model_frame = ttk.Frame(main_frame)
         model_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
@@ -447,8 +477,12 @@ class ClassifierUI:
         self.model_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.model_listbox.yview)
 
-        refresh_btn = ttk.Button(main_frame, text="Refresh Models", command=self.refresh_models)
-        refresh_btn.pack(anchor=tk.W, pady=(0, 10))
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(anchor=tk.W, pady=(0, 10))
+        refresh_btn = ttk.Button(button_frame, text="Refresh Models", command=self.refresh_models)
+        refresh_btn.pack(side=tk.LEFT, padx=(0, 5))
+        select_all_btn = ttk.Button(button_frame, text="Select All", command=self.select_all_models)
+        select_all_btn.pack(side=tk.LEFT)
 
         # Max rows parameter
         ttk.Label(main_frame, text="Max rows to process:").pack(anchor=tk.W, pady=(0, 5))
@@ -470,8 +504,14 @@ class ClassifierUI:
         ttk.Label(main_frame, text=f"CSV: {CSV_PATH}").pack(anchor=tk.W, pady=(0, 10))
 
         # Progress bar
-        ttk.Label(main_frame, text="Progress:").pack(anchor=tk.W, pady=(10, 5))
+        progress_header = ttk.Frame(main_frame)
+        progress_header.pack(anchor=tk.W, pady=(10, 5), fill=tk.X)
+        ttk.Label(progress_header, text="Progress:").pack(side=tk.LEFT)
+        self.progress_label = ttk.Label(progress_header, text="0/0")
+        self.progress_label.pack(side=tk.RIGHT)
+
         self.progress_var = tk.IntVar()
+        self.progress_max_var = tk.IntVar(value=MAX_ROWS)
         self.progress_bar = ttk.Progressbar(
             main_frame,
             variable=self.progress_var,
@@ -511,6 +551,12 @@ class ClassifierUI:
             self.log_status(f"Found {len(self.available_models)} models: {', '.join(self.available_models)}\nAll selected by default.")
         else:
             self.log_status("No models found. Make sure Ollama is running.")
+
+    def select_all_models(self):
+        """Select all models in the listbox."""
+        if self.model_listbox.size() > 0:
+            self.model_listbox.select_set(0, tk.END)
+            self.log_status(f"Selected all {self.model_listbox.size()} models")
 
     def log_status(self, message: str):
         """Log status message."""
@@ -575,6 +621,7 @@ class ClassifierUI:
         self.stop_btn.config(state=tk.NORMAL)
         self.progress_var.set(0)
         self.progress_bar.config(maximum=max_rows)
+        self.progress_label.config(text=f"0/{max_rows}")
         self.status_text.delete(1.0, tk.END)
 
         def run():
@@ -627,6 +674,8 @@ class ClassifierUI:
     def update_progress(self, value: int):
         """Update progress bar."""
         self.progress_var.set(value)
+        max_val = self.progress_bar.cget("maximum")
+        self.progress_label.config(text=f"{value}/{int(max_val)}")
         self.root.update()
 
     def set_max_rows(self):

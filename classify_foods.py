@@ -90,6 +90,7 @@ class OllamaClassifier:
     def estimate_macros(self, food_name: str) -> dict:
         """Estimate macros for a food and return as dict with kcal, protein_g, fat_g, carbs_g."""
         prompt = MACRO_PROMPT.format(food_name=food_name)
+        result = ""  # Initialize to empty string
 
         try:
             response = self.client.post(

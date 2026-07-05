@@ -64,12 +64,15 @@
         ></aside>
 
         <main class="flex-1 overflow-auto p-6">
-          <div class="max-w-3xl mx-auto">
-            <div id="ternary-mount"></div>
-            <p class="mt-2 text-xs text-gray-500">
-              Click a point to inspect. Dashed lines are calorie cost per gram of protein
-              (4 cal/g = pure protein, ∞ at the carb-fat base).
-            </p>
+          <div class="max-w-3xl mx-auto flex gap-6 items-start">
+            <div class="flex-1 min-w-0">
+              <div id="ternary-mount"></div>
+              <p class="mt-2 text-xs text-gray-500">
+                Click a point to inspect. Dashed lines are calorie cost per gram of protein
+                (4 cal/g = pure protein, ∞ at the carb-fat base).
+              </p>
+            </div>
+            <div id="controls-mount" class="w-60 shrink-0"></div>
           </div>
         </main>
 

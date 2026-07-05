@@ -6,6 +6,9 @@ import { loadSnapshot, loadCSV } from "./data.js";
 import { renderTernary } from "./ternary.js";
 import { renderSidebar } from "./filters.js";
 import { renderDetail } from "./detail.js";
+import { renderControls } from "./controls.js";
+import { loadTheme, saveTheme } from "./theme.js";
+import { exportSVG, exportPNG } from "./export.js";
 import {
   openManualModal,
   openAIModal,
@@ -24,6 +27,7 @@ const state = {
   },
   selectedId: null,
   recipes: [],
+  theme: loadTheme(),
 };
 
 function setState(partial) {
@@ -77,6 +81,7 @@ function render() {
     selectedFamily: state.filters.family,
     selectedId: state.selectedId,
     hiddenRetailers: null, // retailer filter already applied above
+    theme: state.theme,
     onSelect: (id) => setState({ selectedId: id }),
   });
 
@@ -116,6 +121,44 @@ function addRecipe(recipe) {
   setState({ recipes: next });
 }
 
+// The Style panel tunes visual params without changing app state, so it
+// re-renders only the plot (keeps slider focus/drag intact) rather than the
+// whole app. Full render() also passes state.theme, so both stay consistent.
+function rerenderPlot() {
+  const filtered = getFilteredProducts();
+  renderTernary({
+    container: document.getElementById("ternary-mount"),
+    products: filtered,
+    recipes: state.recipes,
+    selectedFamily: state.filters.family,
+    selectedId: state.selectedId,
+    hiddenRetailers: null,
+    theme: state.theme,
+    onSelect: (id) => setState({ selectedId: id }),
+  });
+}
+
+function mountControls() {
+  const container = document.getElementById("controls-mount");
+  if (!container) return;
+  renderControls({
+    container,
+    theme: state.theme,
+    onChange: (theme) => {
+      state.theme = theme;
+      saveTheme(theme);
+      rerenderPlot();
+    },
+    onReset: (freshTheme) => {
+      state.theme = freshTheme;
+      mountControls(); // rebuild inputs to reflect defaults
+      rerenderPlot();
+    },
+    onExportSVG: () => exportSVG(document.getElementById("ternary-mount")),
+    onExportPNG: () => exportPNG(document.getElementById("ternary-mount")),
+  });
+}
+
 document
   .getElementById("manual-btn")
   .addEventListener("click", () => openManualModal({ onAdd: addRecipe }));
@@ -133,6 +176,7 @@ async function start() {
     state.families = snapshot.families;
     state.filters.retailers = new Set(snapshot.meta.retailers);
     render();
+    mountControls();
 
     // Fetch and display backend version
     try {

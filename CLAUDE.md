@@ -17,6 +17,9 @@ Macro Ternary is a nutrition/macronutrient visualization tool with AI-powered re
 - **js/models.js**: LLM provider config and API key management
 - **js/filters.js**: Sidebar (search, retailer toggles, family dropdown)
 - **js/ternary.js**: Ternary diagram rendering (D3)
+- **js/theme.js**: Tunable visual parameters for the plot (colors, sizes, grid, tints) + localStorage persistence and color-mixing helpers
+- **js/controls.js**: Live "Style & export" panel bound to the theme
+- **js/export.js**: Standalone SVG / PNG export of the chart
 - **js/detail.js**: Right sidebar (selected product details)
 - **data/**: Served statically; contains families, products, meta. **api-keys.json is gitignored** (sensitive data)
 
@@ -127,6 +130,29 @@ Each provider has:
 ### Quick Test: Manual vs AI Modal
 - **Manual mode** (+ Manual button): Works offline, no API keys needed
 - **AI mode** (+ AI button): Requires at least one API key configured
+
+## Ternary Plot Styling & Export
+
+The plot's appearance is fully data-driven by a `theme` object (`js/theme.js`).
+`renderTernary` only reads values — it never hard-codes look — so every visual
+parameter is tunable.
+
+- **Live controls**: the "⚙ Style & export" panel (`js/controls.js`) sits beside
+  the chart. It's schema-driven: add a row to the `SCHEMA` array to expose a new
+  theme key (supports `range`, `checkbox`, `color`, `select`). Dotted keys like
+  `macroColors.protein` are supported.
+- **Persistence**: choices are saved to `localStorage` (`mt.theme.v1`) and
+  restored on load. "Reset" clears them back to `DEFAULT_THEME`.
+- **Point colouring** (`colorMode`): `"macro"` blends the three corner colours by
+  each food's P/C/F share (foods with zero macros fall back to neutral grey);
+  `"retailer"` uses a fixed colour per retailer.
+- **Layers**: the SVG is built once as a fixed stack of `<g class="layer …">`
+  groups (bg → tints → grid → isolines → outline → ticks → halo → points →
+  recipes → labels → legend) so z-order is stable across re-renders.
+- **Export** (`js/export.js`): `exportSVG` clones the `<svg>`, stamps explicit
+  size + namespaces + a font `<style>`, and downloads a self-contained file
+  (all colours/sizes are already inline attributes). `exportPNG` rasterises that
+  SVG through an offscreen canvas at 2×.
 
 ## Development Workflow
 
